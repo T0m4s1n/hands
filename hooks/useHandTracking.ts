@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { assignHands } from "./handAssignment";
 
 export type Handedness = "Left" | "Right";
 
@@ -49,8 +50,22 @@ const HUD_INTERVAL_MS = 80;
 const DEFAULT_THRESHOLDS: GrabThresholds = { enter: 0.32, exit: 0.52 };
 
 const WORLD_X = 7;
-const WORLD_Y = 4.6;
+// Landmarks are normalised separately over the frame's width and height, so the
+// two axes only carry the same physical distance once the frame's shape is
+// divided back out. Getting this wrong squashes the hand along one axis, which
+// then reads as foreshortening and curls fingers that are in fact straight.
+// Holds a 4:3 guess until the camera reports its real frame.
+let worldY = WORLD_X * 0.75;
+
+export function setFrameShape(width: number, height: number) {
+  if (width > 0 && height > 0) worldY = WORLD_X * (height / width);
+}
+
+
 const WORLD_Z = 1.4;
+const HAND_HOVER = 0.95;
+/** How far a wrist may travel between frames and still be the same hand. */
+const MATCH_RADIUS = 0.22;
 
 export const HAND_CONNECTIONS: ReadonlyArray<readonly [number, number]> = [
   [0, 1],
@@ -85,7 +100,7 @@ type HandLandmarkerResult = {
 
 type HandLandmarker = {
   detectForVideo: (
-    video: HTMLVideoElement,
+    frame: HTMLVideoElement | HTMLCanvasElement,
     timestamp: number,
   ) => HandLandmarkerResult;
   close: () => void;
@@ -144,12 +159,13 @@ function smoothLandmarks(prev: Vec3[] | undefined, next: Vec3[]): Vec3[] {
   return next.map((point, i) => lerpVec(prev[i], point, SMOOTHING));
 }
 
-function landmarkToWorld(lm: Vec3): Vec3 {
-  const mirroredX = 1 - lm.x;
+export function landmarkToWorld(lm: Vec3): Vec3 {
   return {
-    x: (mirroredX - 0.5) * WORLD_X,
-    y: (0.5 - lm.y) * WORLD_Y,
-    z: Math.max(-0.8, Math.min(0.8, -lm.z * WORLD_Z)),
+    // No flip here: the frame was already mirrored before detection.
+    x: (lm.x - 0.5) * WORLD_X,
+    y: (0.5 - lm.y) * worldY,
+    // Hands hover in front of the table plane, never inside it.
+    z: HAND_HOVER + Math.max(-0.7, Math.min(0.7, -lm.z * WORLD_Z)),
   };
 }
 
@@ -177,6 +193,40 @@ function applyHysteresis(
   return pinchDistance < thresholds.enter;
 }
 
+type MirrorCanvas = {
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D | null;
+};
+
+/**
+ * Flips the camera frame horizontally into a reusable canvas. Falls back to the
+ * unflipped video if a 2D context is unavailable, which costs the mirror but
+ * keeps tracking alive.
+ */
+function mirrorFrame(
+  ref: { current: MirrorCanvas | null },
+  video: HTMLVideoElement,
+  width: number,
+  height: number,
+): HTMLVideoElement | HTMLCanvasElement {
+  if (!width || !height) return video;
+  let mirror = ref.current;
+  if (!mirror) {
+    const canvas = document.createElement("canvas");
+    mirror = { canvas, ctx: canvas.getContext("2d") };
+    ref.current = mirror;
+  }
+  const { canvas, ctx } = mirror;
+  if (!ctx) return video;
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  ctx.setTransform(-1, 0, 0, 1, width, 0);
+  ctx.drawImage(video, 0, 0, width, height);
+  return canvas;
+}
+
 function isPermissionDenied(err: unknown): boolean {
   const name = err instanceof DOMException ? err.name : "";
   return name === "NotAllowedError" || name === "PermissionDeniedError";
@@ -195,6 +245,7 @@ export function useHandTracking() {
   const runningRef = useRef(false);
   const sessionRef = useRef(0);
   const pointerCleanupRef = useRef<(() => void) | null>(null);
+  const mirrorRef = useRef<MirrorCanvas | null>(null);
 
   const [status, setStatus] = useState<TrackingStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -291,6 +342,10 @@ export function useHandTracking() {
           return;
         }
 
+        const frameWidth = currentVideo.videoWidth;
+        const frameHeight = currentVideo.videoHeight;
+        setFrameShape(frameWidth, frameHeight);
+
         if (currentVideo.currentTime !== lastVideoTimeRef.current) {
           lastVideoTimeRef.current = currentVideo.currentTime;
           const timestamp = Math.max(
@@ -299,9 +354,16 @@ export function useHandTracking() {
           );
           lastTimestampRef.current = timestamp;
 
+          // The one and only mirroring in the app. Detecting on a flipped
+          // frame is what makes the view read like a mirror, and it also means
+          // the detector's handedness labels arrive the way it documents them,
+          // since it assumes a selfie-mirrored frame to begin with. Everything
+          // downstream then works in one consistent space.
+          const mirrored = mirrorFrame(mirrorRef, currentVideo, frameWidth, frameHeight);
+
           let result;
           try {
-            result = landmarker.detectForVideo(currentVideo, timestamp);
+            result = landmarker.detectForVideo(mirrored, timestamp);
           } catch {
             rafRef.current = requestAnimationFrame(tick);
             return;
@@ -309,14 +371,26 @@ export function useHandTracking() {
           const seen = new Set<Handedness>();
           const nextHands: TrackedHand[] = [];
 
-          result.landmarks.forEach((landmarks, index) => {
+          const detections = result.landmarks.map((landmarks, index) => {
             const category = result.handedness[index]?.[0]?.categoryName;
-            const handedness: Handedness =
-              category === "Left" ? "Left" : "Right";
-            if (seen.has(handedness)) return;
+            const raw = landmarks.map(toVec3);
+            return {
+              raw,
+              wrist: raw[0],
+              label: (category === "Left" ? "Left" : "Right") as Handedness,
+            };
+          });
+
+          const lastWrist = new Map<Handedness, Vec3>();
+          for (const [handedness, persisted] of persistRef.current) {
+            lastWrist.set(handedness, persisted.smoothed[0]);
+          }
+          const claimed = assignHands(detections, lastWrist, MATCH_RADIUS);
+
+          claimed.forEach((detection, handedness) => {
             seen.add(handedness);
 
-            const raw = landmarks.map(toVec3);
+            const raw = detection.raw;
             const prev = persistRef.current.get(handedness);
             const smoothed = smoothLandmarks(prev?.smoothed, raw);
             const { pinchDistance, cursor } = pinchMetrics(smoothed);
@@ -416,8 +490,10 @@ export function useHandTracking() {
           smoothedLandmarks: [],
           cursor: {
             x: (event.clientX / window.innerWidth - 0.5) * 7,
-            y: -(event.clientY / window.innerHeight - 0.5) * 4.6,
-            z: 0,
+            y: -(event.clientY / window.innerHeight - 0.5) * worldY,
+            // Same height tracked hands get, so the glove hovers above the
+            // props instead of sinking behind them.
+            z: HAND_HOVER,
           },
           pinchDistance: grabbing ? 0.12 : 0.8,
           isGrabbing: grabbing,

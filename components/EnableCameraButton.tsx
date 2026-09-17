@@ -153,25 +153,25 @@ export function EnableCameraButton({
         ref={buttonRef}
         type="button"
         disabled={waiting}
-        className="rounded-full bg-cyan-400 px-5 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-300 disabled:cursor-wait disabled:opacity-80"
+        className="rounded-full bg-amber-400 px-5 py-2.5 text-sm font-semibold text-stone-950 hover:bg-amber-300 disabled:cursor-wait disabled:opacity-80"
       >
-        {waiting ? "Waiting for permission…" : "Enable camera"}
+        {waiting ? "Esperando permiso…" : "Activar cámara"}
       </button>
       <button
         type="button"
         onClick={onPointerFallback}
-        className="block w-full text-sm text-slate-300 underline-offset-2 hover:underline"
+        className="block w-full text-sm text-stone-300 underline-offset-2 hover:underline"
       >
-        Continue with mouse instead
+        Continuar con el ratón
       </button>
       {error && (
         <p className="text-left text-sm leading-6 text-amber-200">{error}</p>
       )}
-      <details className="text-left text-slate-500">
-        <summary className="cursor-pointer text-xs font-medium text-slate-400 hover:text-slate-300">
-          Diagnostics
+      <details className="text-left text-stone-500">
+        <summary className="cursor-pointer text-xs font-medium text-stone-400 hover:text-stone-300">
+          Diagnóstico
         </summary>
-        <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-black/30 p-2 font-mono text-[11px] leading-5 text-slate-500">
+        <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-black/30 p-2 font-mono text-[11px] leading-5 text-stone-500">
           {diagnostics}
         </pre>
       </details>
