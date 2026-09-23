@@ -111,10 +111,15 @@ Cuatro mandos (`KNOBS`, `:17-57`), cada uno con su pista:
 
 | Mando | Rango | Pista |
 | --- | --- | --- |
-| Suavizado en reposo | 1–30 | «Más bajo quita temblor; demasiado bajo y la mano flota» |
-| Suavizado en movimiento | 5–60 | «Más alto responde antes y deja pasar más ruido» |
+| Suavizado en reposo | 1–40 | «Más bajo quita temblor; demasiado bajo y la mano flota» |
+| Suavizado en movimiento | 5–120 | «Más alto responde antes y deja pasar más ruido» |
 | Amortiguación de profundidad | 0.05–1 | «La profundidad es el eje más ruidoso» |
+| Inclinación de la palma | 0–1 | «Cuánta profundidad creerse al girar la mano; en 0 sólo gira de plano» |
 | Zona muerta de dedos | 0.6–1 | «Más alto curva los dedos de más; más bajo no los curva» |
+
+«Inclinación de la palma» en 0 reproduce exactamente el comportamiento viejo,
+en el que la mano sólo podía girar en el plano de imagen. Es el mando con el que
+comparar antes y después sin recompilar.
 
 Escriben sobre el objeto mutable `handTuning` de `GloveHand.tsx`, así que se
 afinan contra una cámara viva sin recompilar. Ver

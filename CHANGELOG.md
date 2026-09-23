@@ -11,6 +11,42 @@ sirve de nada dentro de seis meses.
 
 ## Sin publicar
 
+### Las manos responden y giran
+
+- **Quitado el suavizado doble.** El guante volvía a filtrar en espacio de mundo
+  lo que el tracker ya había filtrado, y a menos de la mitad de velocidad
+  (`stillRate 7` / `movingRate 34` contra `14` / `90`). **Dos filtros
+  exponenciales en serie suman sus constantes de tiempo**: el asentamiento en
+  reposo era de unos 214 ms cuando cualquiera de los dos por separado daba la
+  mitad. El segundo estaba deshaciendo el trabajo del primero. Ahora son 16 y
+  90, igualados a los del tracker.
+- **Recuperadas la inclinación y la guiñada.** La marca de palma se construía
+  con los vectores aplanados a `z = 0`, lo que **tiraba dos de las tres
+  rotaciones**: la mano podía girar en el plano de imagen y nada más. Medido
+  contra una mano plana, una mano cabeceada y una girada daban **exactamente
+  cero grados** — no atenuadas, idénticas. El cabeceo está en la profundidad
+  entre muñeca y nudillo medio, la guiñada entre los nudillos del índice y el
+  meñique.
+- **Añadido `hooks/palmFrame.ts`** con nueve pruebas. Construye **dos** marcas:
+  una con profundidad para orientar el guante, y una plana para elegir cuál de
+  los dos modelos ponerse. Separarlas es lo que permite girar **sin** que vuelva
+  el fallo que motivó aplanar — perseguir ruido de profundidad al elegir modelo
+  hacía que el guante cambiara de cara a mitad de gesto. Orientar mal un
+  fotograma es un bamboleo; elegir mal el modelo reconstruye el rig.
+- La base sale ortonormal aunque los dos vectores que la siembran estén
+  torcidos, porque los productos vectoriales lo arreglan solos. Una mano real
+  tampoco es nunca cuadrada.
+- `depthDamping` de 0.45 a 0.75: la rotación se lee de la profundidad ahora, y
+  a 0.45 el guante giraba más tarde que la mano.
+- **Añadido el mando «Inclinación de la palma»** a `/manos`, y ampliados los
+  rangos de los dos de suavizado para que cubran los valores nuevos. En 0
+  reproduce el comportamiento viejo, para comparar sin recompilar.
+
+> **Sin verificar con cámara real.** La geometría está probada y el guante se
+> dibuja sin errores por el camino del ratón, pero el panel del navegador
+> bloquea la cámara, así que nadie ha movido todavía una mano de verdad delante
+> de esto.
+
 ### Documentación
 
 - **Añadida `docs/`**, 32 archivos repartidos en lógica, modelos, estilos y

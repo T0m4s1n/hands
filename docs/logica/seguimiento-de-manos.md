@@ -131,8 +131,11 @@ fingers at different rates from the palm pulls the hand apart when it moves"
 (`:196-197`).
 
 > **Hay un segundo filtro.** El guante suaviza otra vez, en espacio de mundo,
-> con constantes propias (`stillRate 7`, `movingRate 34`, `depthDamping 0.45`).
-> Se aplican **en serie**. Ver [guante.md](guante.md).
+> con constantes propias (`stillRate 16`, `movingRate 90`, `depthDamping 0.75`).
+> Se aplican **en serie**, y dos filtros exponenciales encadenados suman sus
+> constantes de tiempo. Los valores del guante eran 7 y 34, que hacían de este
+> filtro el cuello de botella; ahora están igualados a los de aquí. Ver
+> [guante.md](guante.md).
 
 ## Pellizco
 

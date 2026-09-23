@@ -27,7 +27,7 @@ Lo que **no** está cubierto: el bucle de render, el rig del guante, la carga de
 modelos, el post-proceso y toda la interfaz. Eso se verifica a mano en el
 navegador y en `/manos` y `/modelos`.
 
-## Los seis archivos
+## Los siete archivos
 
 | Archivo | Cubre |
 | --- | --- |
@@ -37,13 +37,14 @@ navegador y en `/manos` y `/modelos`.
 | `components/coffee/physical.test.ts` | Volumen de líquido y sólidos |
 | `components/coffee/slosh.test.ts` | La onda de la superficie |
 | `components/coffee/solid.test.ts` | La altura de transporte |
+| `hooks/palmFrame.test.ts` | Hacia dónde mira la mano |
 
-Cuatro de los seis son bloques de aserciones a nivel superior; sólo
-`solid.test.ts` usa `test()` de `node:test`.
+Cuatro de los siete son bloques de aserciones a nivel superior; `solid.test.ts`
+y `palmFrame.test.ts` usan `test()` de `node:test`.
 
 ## Las pruebas que valen más
 
-Tres, y las tres nacieron de un fallo real:
+Cuatro, y las cuatro nacieron de un fallo real:
 
 1. **`anim.test.ts`** — un solo fotograma de un segundo deja el muelle finito.
    Una pestaña que vuelve de segundo plano entrega justo eso.
@@ -52,6 +53,10 @@ Tres, y las tres nacieron de un fallo real:
    cada vértice de la malla.
 3. **`solid.test.ts`** — a la altura que `carryOver` decide, `overlap` devuelve
    `null`. Es el cierre del círculo del fallo de colisiones.
+4. **`palmFrame.test.ts`** — con el comportamiento viejo, una mano cabeceada y
+   una mano girada dan una marca **idéntica** a la de una mano plana. No
+   atenuada: idéntica, a cero grados. Las dos primeras pruebas dejan ese fallo
+   escrito para que no pueda volver sin que algo falle.
 
 Además `gestures.test.ts` caso 11 es un contrato estructural sobre las recetas:
 si alguien añade una etapa cuya banda no contiene su propio objetivo, o una

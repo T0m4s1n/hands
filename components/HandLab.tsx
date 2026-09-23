@@ -27,7 +27,7 @@ const KNOBS: {
     label: "Suavizado en reposo",
     hint: "Más bajo quita temblor; demasiado bajo y la mano flota",
     min: 1,
-    max: 30,
+    max: 40,
     step: 0.5,
   },
   {
@@ -35,7 +35,7 @@ const KNOBS: {
     label: "Suavizado en movimiento",
     hint: "Más alto responde antes y deja pasar más ruido",
     min: 5,
-    max: 60,
+    max: 120,
     step: 1,
   },
   {
@@ -43,6 +43,14 @@ const KNOBS: {
     label: "Amortiguación de profundidad",
     hint: "La profundidad es el eje más ruidoso",
     min: 0.05,
+    max: 1,
+    step: 0.05,
+  },
+  {
+    key: "tilt",
+    label: "Inclinación de la palma",
+    hint: "Cuánta profundidad creerse al girar la mano; en 0 sólo gira de plano",
+    min: 0,
     max: 1,
     step: 0.05,
   },

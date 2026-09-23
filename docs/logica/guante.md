@@ -69,17 +69,13 @@ plane simply cannot express it".
    `hideRate 5` al salir. Bajo `SHOWN_FLOOR = 0.02` se oculta y se reinicia, para
    que reaparezca ya posada.
 3. **Suavizado #2.** Ver abajo.
-4. **Marca de palma** (`:726-747`). Se construye con los vectores **aplanados a
-   z = 0**: "Depth noise used to flip the glove between faces; flattening keeps
-   yaw stable. **Do NOT force a world-axis flip here** — that mirrors side/up and
-   turns a right hand into a left one while the finger IK still aims at
-   unmirrored landmarks (contortion)."
-5. **Elección de modelo** (`:749-784`). Un cambio exige: estar siguiendo,
-   confianza (`|across · up| < LAYOUT_CONFIDENCE 0.85`, porque casi de canto los
-   dos ejes se juntan y el signo no significa nada), `LAYOUT_FRAMES = 6`
-   fotogramas de acuerdo, y `SWAP_COOLDOWN = 0.6` s de bloqueo después.
-   "This deliberately uses no depth. Depth is the axis this whole file has
-   stopped trusting, and it was the last thing still deciding the model."
+4. **Dos marcas de palma**, de `hooks/palmFrame.ts`. Ver abajo.
+5. **Elección de modelo**. Un cambio exige: estar siguiendo, confianza
+   (`layoutSkew < LAYOUT_CONFIDENCE 0.85`, porque casi de canto los dos ejes se
+   juntan y el signo no significa nada), `LAYOUT_FRAMES = 6` fotogramas de
+   acuerdo, y `SWAP_COOLDOWN = 0.6` s de bloqueo después. Sigue sin usar
+   profundidad: orientar mal la mano un fotograma es un bamboleo, pero elegir
+   mal el modelo **reconstruye el rig**.
 6. **Colocación** (`:786-818`). Escala `= (LOCKED_SPAN / rig.modelSpan) * shown`.
    La corrección de cara dorsal niega **dos** ejes — "that is a half turn about
    the hand's own up axis… Negating a single axis would mirror the hand."
@@ -94,18 +90,69 @@ plane simply cannot express it".
 `:677-703`. Independiente del filtro del hook, con constantes propias:
 
 ```
-rate        = stillRate 7 → movingRate 34   según speed / SPEED_FULL (3.2)
-REST_RATE   = 2.6                            manos quietas
-posFollow   = 1 - exp(-rate · dt)            X e Y
-depthFollow = 1 - exp(-rate · depthDamping · dt)   depthDamping = 0.45
+rate        = stillRate 16 → movingRate 90   según speed / SPEED_FULL (3.2)
+REST_RATE   = 2.6                             manos quietas
+posFollow   = 1 - exp(-rate · dt)             X e Y
+depthFollow = 1 - exp(-rate · depthDamping · dt)   depthDamping = 0.75
 ```
 
-> **La Z va a menos de la mitad de ritmo que X e Y.** "Depth is the noisiest axis
-> MediaPipe reports, so it gets damped harder."
+**Estos números eran 7 y 34, y eran la mayor fuente de retardo de la mano.** El
+hook ya filtra de 14 a 90 antes de que estos landmarks lleguen, y dos filtros
+exponenciales en serie **suman sus constantes de tiempo**: 14 y luego 7 dan un
+asentamiento de unos 214 ms en reposo, donde cualquiera de los dos por separado
+daría la mitad. El segundo filtro estaba deshaciendo calladamente el trabajo del
+primero.
 
-Estas constantes viven en el objeto mutable exportado `handTuning` (`:185-199`),
-"read at runtime so they can be dialled in against a live camera instead of
-guessed at and rebuilt". Es lo que ajustan los mandos de `/manos`.
+Igualados a los del tracker, esta pasada ya sólo lima lo que añade la conversión
+a espacio de mundo, y el filtro que se afinó contra landmarks reales es el que
+decide cómo se siente la mano.
+
+`depthDamping` bajó de 0.45 a 0.75 por la misma razón: **la rotación de la mano
+se lee de la profundidad ahora**, y a 0.45 el guante giraba visiblemente más
+tarde que la mano.
+
+Estas constantes viven en el objeto mutable exportado `handTuning`, "read at
+runtime so they can be dialled in against a live camera instead of guessed at
+and rebuilt". Es lo que ajustan los mandos de `/manos`.
+
+## Las dos marcas de palma
+
+`hooks/palmFrame.ts`, con sus pruebas en `palmFrame.test.ts`.
+
+La marca se construía antes con los vectores **aplanados a z = 0**. Eso compraba
+estabilidad a un precio que nadie había puesto: **tiraba dos de las tres
+rotaciones**. La mano podía girar en el plano de imagen y nada más — inclínala
+hacia delante o gírala sobre su eje y el guante no se movía, por mucho que
+fuera el jugador. Medido contra una mano plana, las dos daban **exactamente
+cero grados**.
+
+- El **cabeceo** está en la profundidad entre la muñeca y el nudillo medio.
+- La **guiñada** está en la profundidad entre el nudillo del índice y el del
+  meñique.
+
+Las dos lecturas son reales. Las dos son ruidosas, porque la profundidad
+siempre lo es. `handTuning.tilt` (0.7 por defecto) decide cuánta creerse, que es
+el mismo trato que hace `WORLD_Z` en el tracker.
+
+Ahora hay **dos marcas**, porque dos trabajos distintos quieren cosas distintas
+de los mismos landmarks:
+
+| Marca | `tilt` | Para qué |
+| --- | --- | --- |
+| `glove.frame` | `handTuning.tilt` | Orientar el guante |
+| `glove.flat` | 0 | Elegir cuál de los dos modelos ponerse |
+
+Mantenerlas separadas es lo que permite que el guante gire **sin** que vuelva el
+fallo que motivó aplanar: perseguir el ruido de profundidad al elegir modelo es
+lo que hacía que el guante cambiara de cara a mitad de gesto.
+
+### La base sale ortonormal sola
+
+Con profundidad en juego `across` ya no es perpendicular a `up`. No importa: los
+dos productos vectoriales lo arreglan solos. `normal` sale perpendicular a
+ambos, y `side` perpendicular a esos dos. **Una mano real tampoco es nunca
+cuadrada**, y no puede deformar el modelo. Comprobado con vectores
+deliberadamente torcidos: desviación máxima 1e-9.
 
 ## La reconstrucción de profundidad
 

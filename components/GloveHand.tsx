@@ -17,6 +17,12 @@ import {
   type Handedness,
   type TrackedHand,
 } from "@/hooks/useHandTracking";
+import {
+  layoutSign,
+  layoutSkew,
+  makeFrame,
+  palmFrame,
+} from "@/hooks/palmFrame";
 
 // Rigged hand meshes from @webxr-input-profiles/assets (MIT), the same models
 // three.js uses for WebXR hand tracking. Both are loaded because which one a
@@ -183,12 +189,43 @@ const SHOWN_FLOOR = 0.02;
  * of guessed at and rebuilt. The defaults are the tuned values.
  */
 export const handTuning = {
-  /** Smoothing in e-folds per second: heavy at rest, light once moving, so
-   *  jitter dies without the hand feeling laggy. */
-  stillRate: 7,
-  movingRate: 34,
-  /** Depth is the noisiest axis tracking reports, so it is damped harder. */
-  depthDamping: 0.45,
+  /**
+   * Smoothing in e-folds per second: heavy at rest, light once moving, so
+   * jitter dies without the hand feeling laggy.
+   *
+   * These used to be 7 and 34, which was the single biggest source of lag in
+   * the hand. The tracker already runs its own speed-adaptive filter at 14 to
+   * 90 before these landmarks ever arrive, and two exponential filters in
+   * series add their time constants: 14 then 7 is a settling time of about
+   * 214ms at rest, where either alone would be half that. The second filter
+   * was quietly undoing the first one's work.
+   *
+   * Matched to the tracker's own rates, this pass now only takes the edge off
+   * what the world-space conversion adds, and the filter that was tuned
+   * against real landmarks is the one deciding how the hand feels.
+   */
+  stillRate: 16,
+  movingRate: 90,
+  /**
+   * Depth is still the noisiest axis tracking reports, so it is damped — but
+   * not halved. The hand's rotation is read from depth now, and at 0.45 the
+   * glove turned visibly later than the hand did.
+   */
+  depthDamping: 0.75,
+  /**
+   * How much of the reported depth to believe when orienting the palm.
+   *
+   * The palm frame used to be built from vectors flattened to z = 0, which
+   * bought stability by throwing away two of the three rotations: a hand could
+   * roll in the image plane and nothing else. Pitch and yaw are in the depth
+   * differences between landmarks, and they are real — just noisy. Believing a
+   * fraction of them is the same bargain `WORLD_Z` makes in the tracker: less
+   * than the truth, but far more than nothing.
+   *
+   * At 1 the glove matches the hand and shivers with it. At 0 it is back to
+   * the flat behaviour this replaced.
+   */
+  tilt: 0.7,
   /** The same dead zone for finger bones. Generous on purpose: the player's
    *  proportions never match the model's, and reading that as foreshortening
    *  would leave every finger permanently half curled. */
@@ -282,10 +319,10 @@ function createGloveState(handedness: Handedness) {
     flatTarget: new Vector3(),
     axis: new Vector3(),
     twist: new Quaternion(),
-    up: new Vector3(),
-    side: new Vector3(),
-    normal: new Vector3(),
-    across: new Vector3(),
+    // Two frames: the one the glove is worn in, and a flat one used only to
+    // choose which of the mirrored pair to wear. See hooks/palmFrame.ts.
+    frame: makeFrame(),
+    flat: makeFrame(),
     dir: new Vector3(),
     quat: new Quaternion(),
     swing: new Quaternion(),
@@ -723,46 +760,49 @@ export function GloveHand({
     const rig = glove.rig;
     if (!rig) return;
 
-    // Palm frame from the image plane. Depth noise used to flip the glove
-    // between faces; flattening keeps yaw stable. Do NOT force a world-axis
-    // flip here — that mirrors side/up and turns a right hand into a left one
-    // while the finger IK still aims at unmirrored landmarks (contortion).
-    glove.up.copy(current[9]).sub(current[0]);
-    glove.up.z = 0;
-    if (glove.up.lengthSq() < 1e-8) glove.up.set(0, 1, 0);
-    else glove.up.normalize();
+    // Two palm frames, because two jobs want different things from the same
+    // landmarks: the glove is worn in one, and the choice of which mirrored
+    // model to wear is read from the other. hooks/palmFrame.ts explains why
+    // they cannot be the same frame, and carries the tests.
+    //
+    // Do NOT force a world-axis flip here — that mirrors side/up and turns a
+    // right hand into a left one while the finger IK still aims at unmirrored
+    // landmarks (contortion).
+    palmFrame(
+      current[0],
+      current[9],
+      current[5],
+      current[17],
+      handTuning.tilt,
+      glove.frame,
+    );
+    // Tilt zero is the flat reading, which is the steady one.
+    palmFrame(current[0], current[9], current[5], current[17], 0, glove.flat);
+    glove.basis.makeBasis(
+      glove.frame.side,
+      glove.frame.up,
+      glove.frame.normal,
+    );
 
-    glove.across.copy(current[17]).sub(current[5]);
-    glove.across.z = 0;
-    if (glove.across.lengthSq() < 1e-8) {
-      glove.across.crossVectors(AXIS_Z, glove.up);
-      if (glove.across.lengthSq() < 1e-8) glove.across.set(1, 0, 0);
-    }
-    glove.across.normalize();
-
-    glove.normal.crossVectors(glove.across, glove.up);
-    if (glove.normal.lengthSq() < 1e-8) glove.normal.copy(AXIS_Z);
-    glove.normal.normalize();
-    glove.side.crossVectors(glove.up, glove.normal).normalize();
-    glove.basis.makeBasis(glove.side, glove.up, glove.normal);
-
-    // Choose which of the mirrored pair to wear, from the flattened layout
-    // alone. With depth dropped from the frame, `normal` is simply +Z or -Z:
-    // the sign says which way round the fingers run on screen, and that is all
-    // the information there is about which hand this looks like. A left palm
-    // and a right back draw the same silhouette, so the model and the face it
-    // shows are one choice, not two.
+    // Choose which of the mirrored pair to wear, from the flat frame alone.
+    // With depth dropped, the normal of that frame is simply +Z or -Z: the
+    // sign says which way round the fingers run on screen, and that is all the
+    // information there is about which hand this looks like. A left palm and a
+    // right back draw the same silhouette, so the model and the face it shows
+    // are one choice, not two.
     //
     // A model's own `chirality` is the side of its normal its palm lies on, so
     // aligning it puts the palm along `normal * chirality`. Wanting the palm
     // pointing away from the camera fixes the choice: chirality = -normal.z.
     //
-    // This deliberately uses no depth. Depth is the axis this whole file has
-    // stopped trusting, and it was the last thing still deciding the model.
-    const layout = Math.sign(glove.normal.z) || 1;
+    // This deliberately still uses no depth, even though the frame above now
+    // does. Orienting the hand wrong for a frame is a wobble; picking the
+    // wrong model rebuilds the rig, so this one stays on the steady reading.
+    // For two vectors in the plane the cross product is only its z term, so
+    // the sign is read straight off rather than building a third vector.
+    const layout = layoutSign(glove.flat);
     const wanted = handView.faceDorsal ? -layout : layout;
-    const confident =
-      Math.abs(glove.across.dot(glove.up)) < LAYOUT_CONFIDENCE;
+    const confident = layoutSkew(glove.flat) < LAYOUT_CONFIDENCE;
     glove.swapCooldown = Math.max(0, glove.swapCooldown - dt);
     if (
       tracked &&
@@ -799,9 +839,13 @@ export function GloveHand({
     // axis would mirror the hand instead, which is the contortion to avoid.
     glove.palmWorld.copy(rig.palmDir).applyQuaternion(glove.quat);
     if (glove.palmWorld.z > 0 === handView.faceDorsal) {
-      glove.normal.negate();
-      glove.side.negate();
-      glove.basis.makeBasis(glove.side, glove.up, glove.normal);
+      glove.frame.normal.negate();
+      glove.frame.side.negate();
+      glove.basis.makeBasis(
+        glove.frame.side,
+        glove.frame.up,
+        glove.frame.normal,
+      );
       glove.quat.setFromRotationMatrix(glove.basis).multiply(rig.modelBasisInv);
     }
     if (glove.turned) glove.smoothed.slerp(glove.quat, posFollow);
@@ -907,8 +951,10 @@ export function GloveHand({
     const cuff = cuffRef.current;
     if (cuff) {
       cuff.visible = true;
-      cuff.quaternion.setFromUnitVectors(AXIS_Z, glove.up);
-      cuff.position.copy(current[0]).addScaledVector(glove.up, -0.06 * glove.span);
+      cuff.quaternion.setFromUnitVectors(AXIS_Z, glove.frame.up);
+      cuff.position
+        .copy(current[0])
+        .addScaledVector(glove.frame.up, -0.06 * glove.span);
       cuff.scale.setScalar(0.3 * glove.span * glove.shown);
       const band = cuff.material as MeshStandardMaterial;
       band.color.copy(glove.cuffTint);
