@@ -51,31 +51,58 @@ Consecuencias directas:
 La prueba de que el enfoque funciona llevaba todo el tiempo en pantalla:
 `LandmarkDots` dibuja así desde el principio y nunca se retorció.
 
+## Profundidad, y por qué hay que estirarla
+
+MediaPipe reporta la profundidad a **aproximadamente un quinto** de la escala de
+los otros dos ejes. `WORLD_Z` en el tracker deshace parte de eso, pero se eligió
+cuando la profundidad sólo decidía la forma de un dedo, y es deliberadamente
+tímido.
+
+Lo que deja es una mano lo bastante plana como para que **ningún dedo pase nunca
+por detrás de otro**. Y una mano cuyas partes no se tapan entre sí no se lee
+como un objeto sólido, por bien sombreada que esté: se lee como una pegatina.
+
+Por eso `deepen()` estira la profundidad **sobre la muñeca**, para que la mano se
+ahonde donde está en vez de deslizarse hacia la cámara al cambiar la escala. El
+mando **«Profundidad de la mano»** (`depthScale`, 2.2 por defecto) lo gobierna, y
+está por encima de 1 a propósito.
+
+La oclusión en sí no hace falta programarla: los materiales hacen depth test,
+así que en cuanto hay separación real en el eje de visión, lo de detrás queda
+tapado.
+
 ## Lo que cuesta
 
 **Los dedos cambian de longitud aparente al girar hacia la cámara**, porque nada
 les obliga a conservarla. Es exactamente el hecho contra el que peleaban las
 cuatrocientas líneas de IK, y aceptarlo es lo que compra todo lo de arriba.
 
-El mando **«Profundidad de la mano»** (`depthScale`, 0.85) es el último ajuste
-sobre eso: en 1 la mano es tan honda como el seguimiento afirma y los dedos se
-acortan de forma convincente; más bajo, la mano se aplana hacia la pantalla y
-conserva mejor su forma.
-
 ## El aspecto
 
-No puede parecer carne, así que no lo intenta: **falanges cerámicas sobre
-rótulas de latón**, la mano de un autómata y no la de una persona.
+No puede parecer carne, así que no lo intenta: una mano de dibujos, con
+falanges gruesas y rótulas gordas.
 
-| Pieza | Material |
+**Sombreado cel.** Todo usa `meshToonMaterial` contra una rampa de **cuatro
+escalones planos** en vez de un degradado suave. Es lo que lo convierte en un
+dibujo en vez de un render. El precio: el sombreado toon no tiene metalness ni
+reflejos, así que el latón deja de ser metal literal y pasa a ser *el color con
+el que se dibuja el oro* — que para una caricatura es el cambio correcto.
+
+Los colores van **pitados de brillo** a propósito (`#fbf0d9`, `#f2ab2c`): la
+rampa escalona todo hacia el extremo oscuro, así que un color elegido para verse
+bien plano sale embarrado una vez sobre ella.
+
+| Pieza | Forma |
 | --- | --- |
-| Falanges | Cerámica `#e6ddcd`, rugosidad 0.42, cónicas hacia la yema |
-| Articulaciones | Latón `#c08b3e`, metalness 0.85, `envMapIntensity` 1.4 |
-| Placa de palma | La misma cerámica, `RoundedBox` |
+| Falanges | Cilindro apenas cónico, gordo |
+| Articulaciones | Esferas grandes, que además rematan los cilindros |
+| Placa de palma | `RoundedBox` medida de la mano que tiene delante |
 | Puño | Un tono por mano: `Left #d98c3c`, `Right #7a3b1e` |
 
-El latón **necesita el mapa de entorno de la escena** para leerse como metal;
-sin él sería marrón plano. Ver [../modelos/escena.md](../modelos/escena.md).
+Una cápsula sería la forma obvia para un hueso **y es la equivocada**: escalarla
+a la longitud del hueso estira sus tapas en huevos. Un cilindro se escala
+limpio, y las esferas de las articulaciones sobresalen por los dos extremos, lo
+que lo redondea gratis.
 
 Los grosores están escritos a mano por landmark (`JOINT_SIZE`) y no derivados,
 porque una mano no es uniforme: los nudillos son más anchos que los huesos que
@@ -100,7 +127,7 @@ siempre del lado de la yema.
   crece y mengua con la distancia a la cámara, y seguirlo hacía latir la mano.
 - **`REST_POSE`**, para el sustituto de ratón. Pasa por el mismo `lockSpan` que
   una mano seguida, así que las dos miden igual por construcción.
-- **`palmFrame`**, pero con un papel mucho menor: orienta la placa y el puño.
+- **`deepen`** y **`palmFrame`**, este último con un papel mucho menor: orienta la placa y el puño.
   Si el ruido de profundidad lo agita, se agitan **una placa y un puño**. Antes
   orientaba la mano entera.
 

@@ -49,10 +49,10 @@ const KNOBS: {
   {
     key: "depthScale",
     label: "Profundidad de la mano",
-    hint: "En 1 los dedos se acortan al girar hacia la cámara; más bajo aplana",
+    hint: "Más alto separa los dedos en profundidad y se tapan entre ellos",
     min: 0,
-    max: 1,
-    step: 0.05,
+    max: 4,
+    step: 0.1,
   },
 ];
 

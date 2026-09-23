@@ -120,3 +120,24 @@ export function lockSpan(points: Vector3[], scratch: Vector3): void {
     point.sub(scratch).multiplyScalar(fit).add(scratch);
   }
 }
+
+/**
+ * Stretches a landmark cloud's depth about its wrist, in place.
+ *
+ * MediaPipe reports depth at roughly a fifth of the scale of the other two
+ * axes. `WORLD_Z` in the tracker undoes part of that, but it was chosen when
+ * depth only ever decided the shape of a finger, and it is deliberately timid.
+ * What it leaves is a hand flat enough that no finger ever passes behind
+ * another — and a hand whose parts never occlude each other does not read as a
+ * solid object at all, however well it is shaded.
+ *
+ * About the wrist rather than the origin, so the hand deepens where it stands
+ * instead of sliding toward or away from the camera as the scale changes.
+ */
+export function deepen(points: Vector3[], scale: number): void {
+  if (points.length === 0 || scale === 1) return;
+  const wristZ = points[0].z;
+  for (const point of points) {
+    point.z = wristZ + (point.z - wristZ) * scale;
+  }
+}

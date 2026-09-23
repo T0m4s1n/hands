@@ -11,6 +11,28 @@ sirve de nada dentro de seis meses.
 
 ## Sin publicar
 
+### La mano, de caricatura y con profundidad real
+
+- **Sombreado cel.** Todo pasa a `meshToonMaterial` contra una rampa de cuatro
+  escalones planos. El latón deja de ser metal literal y pasa a ser el color con
+  el que se dibuja el oro — para una caricatura, el cambio correcto. Los colores
+  se subieron de brillo porque la rampa escalona todo hacia lo oscuro.
+- **Proporciones gordas**: articulaciones mucho mayores y falanges casi sin
+  cono. Una mano de dibujos tiene salchichas por dedos, no husos.
+- **Los dedos ya se tapan entre sí.** No había que programar la oclusión —los
+  materiales hacen depth test— sino **que hubiera profundidad que ocluir**.
+  MediaPipe la reporta a un quinto de la escala de los otros ejes y `WORLD_Z` se
+  eligió tímido, cuando sólo decidía la forma de un dedo. Lo que quedaba era una
+  mano tan plana que ningún dedo pasaba nunca por detrás de otro, y una mano
+  cuyas partes no se tapan no se lee como un sólido por bien sombreada que esté.
+  Añadido `deepen()`, que estira la profundidad sobre la muñeca; por defecto
+  2.2, por encima de 1 a propósito.
+- **Arreglado un deslizador que dejé roto**: «Profundidad de la mano» iba de 0 a
+  1 y el valor por defecto pasó a 2.2, fuera de su propio rango.
+- Una cápsula habría sido la forma obvia para un hueso y es la equivocada:
+  escalarla a la longitud del hueso estira sus tapas en huevos. Cilindro, con
+  las esferas de las articulaciones redondeando los extremos.
+
 ### La mano se construye sobre los puntos, no sobre un esqueleto
 
 - **Sustituido el guante entero por una mano de autómata.** El guante posaba

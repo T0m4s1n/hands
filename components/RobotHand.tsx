@@ -3,15 +3,29 @@
 import { useMemo, useRef, type RefObject } from "react";
 import { useFrame } from "@react-three/fiber";
 import { RoundedBox } from "@react-three/drei";
-import type { InstancedMesh, Mesh, MeshStandardMaterial } from "three";
-import { Color, Matrix4, Quaternion, Vector3 } from "three";
+import type { InstancedMesh, Mesh, MeshToonMaterial } from "three";
+import {
+  Color,
+  DataTexture,
+  Matrix4,
+  NearestFilter,
+  Quaternion,
+  RedFormat,
+  Vector3,
+} from "three";
 import {
   HAND_CONNECTIONS,
   landmarkToWorld,
   type Handedness,
   type TrackedHand,
 } from "@/hooks/useHandTracking";
-import { LOCKED_SPAN, lockSpan, makeFrame, palmFrame } from "@/hooks/palmFrame";
+import {
+  LOCKED_SPAN,
+  deepen,
+  lockSpan,
+  makeFrame,
+  palmFrame,
+} from "@/hooks/palmFrame";
 
 /**
  * The hand, built where the tracking says it is.
@@ -47,12 +61,15 @@ import { LOCKED_SPAN, lockSpan, makeFrame, palmFrame } from "@/hooks/palmFrame";
  * joints, an automaton's hand rather than a person's.
  */
 
-/** Ceramic. */
-const BONE_COLOR = new Color("#e6ddcd");
-const BONE_RESTING = new Color("#b3a894");
-/** Brass, which needs the scene's environment map to read as metal at all. */
-const JOINT_COLOR = new Color("#c08b3e");
-const JOINT_RESTING = new Color("#7d5a2a");
+/**
+ * Drawn colours rather than material ones, and pitched bright: cel shading
+ * steps everything down toward the dark end, so a colour picked to look right
+ * flat comes out muddy once it is on the ramp.
+ */
+const BONE_COLOR = new Color("#fbf0d9");
+const BONE_RESTING = new Color("#c2b7a2");
+const JOINT_COLOR = new Color("#f2ab2c");
+const JOINT_RESTING = new Color("#8f6524");
 const GRAB_COLOR = new Color("#f0b429");
 
 /** A cuff per hand, far enough apart in tone to tell which is which. */
@@ -60,6 +77,25 @@ const HAND_ACCENTS: Record<Handedness, string> = {
   Left: "#d98c3c",
   Right: "#7a3b1e",
 };
+
+/**
+ * The ramp every surface here is shaded against: four flat steps instead of a
+ * smooth falloff.
+ *
+ * This is what makes it read as a drawing rather than as a render. Toon
+ * shading also drops metalness and reflections, so the brass stops being
+ * literal metal and becomes the colour gold is drawn with — which is the
+ * trade, and for a cartoon it is the right way round.
+ */
+function toonRamp() {
+  const steps = new Uint8Array([86, 150, 214, 255]);
+  const ramp = new DataTexture(steps, steps.length, 1, RedFormat);
+  ramp.minFilter = NearestFilter;
+  ramp.magFilter = NearestFilter;
+  ramp.generateMipmaps = false;
+  ramp.needsUpdate = true;
+  return ramp;
+}
 
 const AXIS_Y = new Vector3(0, 1, 0);
 const AXIS_Z = new Vector3(0, 0, 1);
@@ -74,12 +110,12 @@ const BONES = HAND_CONNECTIONS.length;
  * jointed hand read as jointed, and everything narrows toward the fingertips.
  */
 const JOINT_SIZE: readonly number[] = [
-  0.105, // 0  wrist
-  0.068, 0.06, 0.052, 0.042, // 1-4   thumb
-  0.072, 0.058, 0.05, 0.04, // 5-8   index
-  0.074, 0.06, 0.051, 0.041, // 9-12  middle
-  0.07, 0.056, 0.049, 0.039, // 13-16 ring
-  0.062, 0.051, 0.045, 0.036, // 17-20 pinky
+  0.135, // 0  wrist
+  0.095, 0.086, 0.078, 0.07, // 1-4   thumb
+  0.1, 0.088, 0.079, 0.07, // 5-8   index
+  0.103, 0.09, 0.08, 0.071, // 9-12  middle
+  0.098, 0.086, 0.077, 0.068, // 13-16 ring
+  0.088, 0.079, 0.072, 0.064, // 17-20 pinky
 ];
 
 /** The five bones that outline the palm rather than a finger. */
@@ -106,15 +142,20 @@ export const handTuning = {
   /** Depth is the noisiest axis tracking reports, so it is damped harder. */
   depthDamping: 0.75,
   /**
-   * How much of the reported depth to keep.
+   * How far to stretch the reported depth, about the wrist.
    *
-   * MediaPipe reports depth at about a fifth of the scale of the other two
-   * axes, and `WORLD_Z` in the tracker already stretches it back out. This is
-   * the last say on it: at 1 the hand is as deep as the tracking claims and
-   * fingers shorten convincingly as they turn toward the camera; lower, the
-   * hand flattens toward the screen and holds its shape more steadily.
+   * MediaPipe reports depth at roughly a fifth of the scale of the other two
+   * axes. `WORLD_Z` in the tracker undoes some of that, but it was set when
+   * depth was only ever used for the shape of a finger, and it is deliberately
+   * timid — which left the hand nearly flat. A flat hand is a hand whose
+   * fingers never pass behind one another, so nothing ever occludes anything
+   * and the whole thing reads as a sticker.
+   *
+   * Above 1 on purpose. At 1 the hand is as deep as `WORLD_Z` leaves it; the
+   * default here opens that out until a finger folded behind the palm is
+   * genuinely behind it and gets hidden by it.
    */
-  depthScale: 0.85,
+  depthScale: 2.2,
   /** Arriving is quick, leaving gentler, so a dropped frame is not a flicker. */
   showRate: 14,
   hideRate: 5,
@@ -191,11 +232,12 @@ export function RobotHand({
   // joints it runs between, so a bone never looks fatter than the knuckle it
   // leaves. Palm struts are squarer, because they are a chassis rather than a
   // finger.
+  const ramp = useMemo(() => toonRamp(), []);
   const boneSize = useMemo(
     () =>
       HAND_CONNECTIONS.map(([a, b], i) => {
         const thinner = Math.min(JOINT_SIZE[a], JOINT_SIZE[b]);
-        return thinner * (PALM_BONES.has(i) ? 0.62 : 0.72);
+        return thinner * (PALM_BONES.has(i) ? 0.72 : 0.86);
       }),
     [],
   );
@@ -223,15 +265,9 @@ export function RobotHand({
       // Lock the visual size. Apparent hand size grows and shrinks with
       // distance to the camera, and following it made the hand pulse.
       lockSpan(target, s.v);
-      // The last say on how much depth to keep, about the wrist so the hand
-      // flattens rather than sliding toward the screen.
-      const flatten = handTuning.depthScale;
-      if (flatten !== 1) {
-        const wristZ = target[0].z;
-        for (const point of target) {
-          point.z = wristZ + (point.z - wristZ) * flatten;
-        }
-      }
+      // Open the depth out, so fingers are far enough apart along the view
+      // axis to pass behind one another and be hidden when they do.
+      deepen(target, handTuning.depthScale);
     } else if (hand) {
       // Pointer fallback: a cursor and no hand shape, so the resting pose
       // stands in and is hung off the cursor.
@@ -365,18 +401,18 @@ export function RobotHand({
     s.jointTint.lerp(GRAB_COLOR, s.grab * 0.7);
     s.cuffTint.copy(s.accent).lerp(GRAB_COLOR, s.grab);
 
-    const boneMaterial = bones.material as MeshStandardMaterial;
+    const boneMaterial = bones.material as MeshToonMaterial;
     boneMaterial.color.copy(s.boneTint);
     boneMaterial.emissive.copy(GRAB_COLOR);
     boneMaterial.emissiveIntensity = 0.16 * s.grab;
 
-    const jointMaterial = joints.material as MeshStandardMaterial;
+    const jointMaterial = joints.material as MeshToonMaterial;
     jointMaterial.color.copy(s.jointTint);
     jointMaterial.emissive.copy(GRAB_COLOR);
     jointMaterial.emissiveIntensity = 0.3 * s.grab;
 
-    if (palm) (palm.material as MeshStandardMaterial).color.copy(s.boneTint);
-    if (cuff) (cuff.material as MeshStandardMaterial).color.copy(s.cuffTint);
+    if (palm) (palm.material as MeshToonMaterial).color.copy(s.boneTint);
+    if (cuff) (cuff.material as MeshToonMaterial).color.copy(s.cuffTint);
   });
 
   return (
@@ -388,14 +424,15 @@ export function RobotHand({
         frustumCulled={false}
         castShadow
       >
-        {/* Tapered, and the taper has a direction: connections run parent to
-            child, so the narrow end is always the one nearer the fingertip. */}
-        <cylinderGeometry args={[0.78, 1, 1, 10]} />
-        <meshStandardMaterial
-          color={BONE_COLOR}
-          roughness={0.42}
-          metalness={0.06}
-        />
+        {/* Barely tapered: a cartoon hand has sausages for fingers, not
+            spindles. A capsule would be the obvious shape and is the wrong
+            one — scaling it to a bone's length stretches its caps into eggs.
+            A plain cylinder is scaled cleanly, and the joint spheres sit
+            proud of it at both ends, which rounds it off for free. The taper
+            still has a direction: connections run parent to child, so the
+            narrow end is always the one nearer the fingertip. */}
+        <cylinderGeometry args={[0.9, 1, 1, 12]} />
+        <meshToonMaterial color={BONE_COLOR} gradientMap={ramp} />
       </instancedMesh>
 
       <instancedMesh
@@ -406,12 +443,7 @@ export function RobotHand({
         castShadow
       >
         <sphereGeometry args={[1, 14, 10]} />
-        <meshStandardMaterial
-          color={JOINT_COLOR}
-          roughness={0.3}
-          metalness={0.85}
-          envMapIntensity={1.4}
-        />
+        <meshToonMaterial color={JOINT_COLOR} gradientMap={ramp} />
       </instancedMesh>
 
       {/* A machined plate the linkage is mounted on, rather than a brick. */}
@@ -423,20 +455,12 @@ export function RobotHand({
         visible={false}
         castShadow
       >
-        <meshStandardMaterial
-          color={BONE_COLOR}
-          roughness={0.5}
-          metalness={0.08}
-        />
+        <meshToonMaterial color={BONE_COLOR} gradientMap={ramp} />
       </RoundedBox>
 
       <mesh ref={cuffRef} visible={false} castShadow>
         <torusGeometry args={[1, 0.34, 10, 22]} />
-        <meshStandardMaterial
-          color={HAND_ACCENTS[handedness]}
-          roughness={0.45}
-          metalness={0.3}
-        />
+        <meshToonMaterial color={HAND_ACCENTS[handedness]} gradientMap={ramp} />
       </mesh>
     </group>
   );

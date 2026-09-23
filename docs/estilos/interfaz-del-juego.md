@@ -120,7 +120,7 @@ Cuatro mandos (`KNOBS`, `:17-57`), cada uno con su pista:
 | Suavizado en reposo | 1–40 | «Más bajo quita temblor; demasiado bajo y la mano flota» |
 | Suavizado en movimiento | 5–120 | «Más alto responde antes y deja pasar más ruido» |
 | Amortiguación de profundidad | 0.05–1 | «La profundidad es el eje más ruidoso» |
-| Profundidad de la mano | 0–1 | «En 1 los dedos se acortan al girar hacia la cámara; más bajo aplana» |
+| Profundidad de la mano | 0–4 | «Más alto separa los dedos en profundidad y se tapan entre ellos» |
 
 Y un interruptor, **«Placa de palma»**. Los que había para elegir cara y modelo
 desaparecieron con el rig: la mano se arma sobre los puntos, así que la

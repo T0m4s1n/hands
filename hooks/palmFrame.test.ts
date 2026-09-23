@@ -11,7 +11,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Vector3 } from "three";
-import { makeFrame, palmFrame, lockSpan, LOCKED_SPAN } from "./palmFrame.ts";
+import {
+  makeFrame,
+  palmFrame,
+  lockSpan,
+  deepen,
+  LOCKED_SPAN,
+} from "./palmFrame.ts";
 
 const v = (x: number, y: number, z: number) => new Vector3(x, y, z);
 
@@ -148,4 +154,40 @@ test("lockSpan leaves a degenerate cloud alone rather than exploding it", () => 
   for (const point of points) {
     assert.ok(Number.isFinite(point.x + point.y + point.z), "produced a NaN");
   }
+});
+
+test("deepen scales depth about the wrist and leaves the wrist alone", () => {
+  const points = [v(0, 0, 2), v(1, 1, 2.5), v(2, 2, 1)];
+  deepen(points, 3);
+  assert.equal(points[0].z, 2, "the wrist must not move");
+  // Each point keeps its side of the wrist and triples its distance from it.
+  assert.ok(Math.abs(points[1].z - (2 + 0.5 * 3)) < 1e-9);
+  assert.ok(Math.abs(points[2].z - (2 - 1 * 3)) < 1e-9);
+});
+
+test("deepen leaves x and y untouched", () => {
+  const points = [v(0, 0, 0), v(1.5, -2.5, 0.4)];
+  deepen(points, 4);
+  assert.equal(points[1].x, 1.5);
+  assert.equal(points[1].y, -2.5);
+});
+
+test("deepen at 1 changes nothing, and at 0 flattens the hand", () => {
+  const same = [v(0, 0, 1), v(0, 0, 3)];
+  deepen(same, 1);
+  assert.equal(same[1].z, 3);
+
+  const flat = [v(0, 0, 1), v(0, 0, 3), v(0, 0, -5)];
+  deepen(flat, 0);
+  for (const point of flat) assert.equal(point.z, 1, "all onto the wrist plane");
+});
+
+test("deepen separates what was overlapping, which is the whole point", () => {
+  // Two fingertips a hair apart in depth: at rest they z-fight, opened out
+  // they are unambiguously one behind the other.
+  const points = [v(0, 0, 0), v(0.2, 0.5, 0.01), v(0.21, 0.5, -0.01)];
+  const before = Math.abs(points[1].z - points[2].z);
+  deepen(points, 4);
+  const after = Math.abs(points[1].z - points[2].z);
+  assert.ok(after > before * 3.9, `${before} should have opened out, got ${after}`);
 });
