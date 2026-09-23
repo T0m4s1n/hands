@@ -130,12 +130,11 @@ Una sola velocidad para toda la mano, medida en la muñeca, porque "smoothing th
 fingers at different rates from the palm pulls the hand apart when it moves"
 (`:196-197`).
 
-> **Hay un segundo filtro.** El guante suaviza otra vez, en espacio de mundo,
-> con constantes propias (`stillRate 16`, `movingRate 90`, `depthDamping 0.75`).
-> Se aplican **en serie**, y dos filtros exponenciales encadenados suman sus
-> constantes de tiempo. Los valores del guante eran 7 y 34, que hacían de este
-> filtro el cuello de botella; ahora están igualados a los de aquí. Ver
-> [guante.md](guante.md).
+> **Hay un segundo filtro.** La mano suaviza otra vez, en espacio de mundo,
+> con las mismas constantes (`stillRate 16`, `movingRate 90`,
+> `depthDamping 0.75`). Se aplican **en serie**, y dos filtros exponenciales
+> encadenados suman sus constantes de tiempo — los valores de la mano eran 7 y
+> 34, que hacían de ese filtro el cuello de botella. Ver [mano.md](mano.md).
 
 ## Pellizco
 

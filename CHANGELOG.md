@@ -11,6 +11,42 @@ sirve de nada dentro de seis meses.
 
 ## Sin publicar
 
+### La mano se construye sobre los puntos, no sobre un esqueleto
+
+- **Sustituido el guante entero por una mano de autómata.** El guante posaba
+  una malla glTF con esqueleto: leía la pose de bind, recorría cada dedo como
+  una cadena, resolvía una rotación por hueso y sujetaba cada articulación
+  dentro de límites. Mil líneas, todas al servicio de **un solo requisito** —
+  una malla con esqueleto tiene longitudes de hueso fijas y hay que
+  respetarlas — y ese requisito era la causa de toda la fragilidad:
+  - Longitudes fijas obligan a **inventar la profundidad**, lo que exige un
+    signo que es indecidible justo donde más importa.
+  - Un esqueleto tiene **quiralidad propia**, así que había que elegir entre dos
+    modelos espejados y volver a elegir al girar la mano. Elegir mal
+    **reconstruía el rig a mitad de gesto**.
+  - Resolver rotaciones **en cadena** acumula error: un ángulo malo en un
+    nudillo mueve todo lo que hay más allá.
+
+  Los tres fallos de inestabilidad arreglados antes eran el mismo fallo
+  asomando por sitios distintos.
+- **Ahora cada segmento se dibuja entre los dos landmarks que abarca**, y cada
+  articulación donde está su landmark. Ninguna rotación se resuelve; sólo se
+  lee. Una mano izquierda sale izquierda porque sus puntos son los de una mano
+  izquierda. Un dedo mal leído sale mal él solo, sin arrastrar a la mano.
+- **El enfoque ya estaba probado en pantalla**: `LandmarkDots` dibuja así desde
+  el principio y nunca se retorció.
+- Aspecto: falanges cerámicas cónicas sobre rótulas de latón, placa de palma
+  mecanizada y puño. No puede parecer carne y no lo intenta.
+- **Borradas ~1.130 líneas** (`GloveHand.tsx`, `hooks/boneAim.ts`) por ~560, y
+  con ellas `CHAINS`, los límites articulares, `buildRig`, `readBindPose`,
+  `modelChirality`, `trackedDirection`, `constrainDirection`, `MAX_BONE_SLEW` y
+  el intercambio de modelo completo.
+- Borrados `public/models/hand-left.glb` y `hand-right.glb`: 184 KB que ya no
+  referencia nadie.
+- **El coste, dicho claro:** los dedos cambian de longitud aparente al girar
+  hacia la cámara, porque nada les obliga a conservarla. Es el hecho contra el
+  que peleaba la IK. El mando «Profundidad de la mano» lo gradúa.
+
 ### Las manos responden y giran
 
 - **Arreglada la inestabilidad que introdujeron los dos cambios de abajo.** El

@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState, type RefObject } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { Environment, Lightformer, RoundedBox } from "@react-three/drei";
 import { NoToneMapping, Vector3 } from "three";
-import { HandGloves } from "@/components/GloveHand";
+import { HandGloves } from "@/components/RobotHand";
 import { CoffeeGame, type StageStatus } from "@/components/CoffeeGame";
 import { Cafe, FLOOR_Z } from "@/components/coffee/cafe";
 import { GradePass } from "@/components/coffee/grade";

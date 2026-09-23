@@ -1,21 +1,19 @@
 /**
  * Which way a hand is facing, from four of its landmarks.
  *
- * This used to live inline in the glove and was built from vectors flattened
- * to z = 0. Flattening bought stability at a price nobody had priced: it threw
- * away two of the three rotations. A hand could roll in the image plane and do
- * nothing else — pitch it forward or turn the palm and the glove did not move,
- * however far the player went. Measured against a flat hand, both came out at
- * exactly zero degrees.
+ * This was written to orient a rigged glove, and orienting that glove was the
+ * most dangerous thing in the hand: a frame that shook shook the whole model,
+ * and a frame that flipped rebuilt its skeleton. The glove is gone and the
+ * hand is now built straight on the landmarks, so nothing here decides where a
+ * finger goes any more.
  *
- * Pitch is the depth between the wrist and the middle knuckle; yaw is the
- * depth between the index and little knuckles. Both are real readings. Both
- * are noisy, because depth always is. `tilt` is how much of them to believe,
- * which is the same bargain `WORLD_Z` strikes in the tracker: less than the
- * truth, and far more than nothing.
+ * What is left of the job is small and safe. The palm plate needs a plane to
+ * lie in and the cuff needs an axis to ring, and if depth noise shakes this
+ * frame, a plate and a cuff shake. `tilt` scales how much of the reported
+ * depth to use, and at 1 the plate simply lies where the knuckles do.
  *
- * Out-parameters rather than fresh vectors, because this runs once per hand
- * per frame.
+ * `lockSpan` also lives here, because the hand and the debug overlay both have
+ * to be measured the same way before either can be compared with the other.
  */
 
 import { Vector3 } from "three";
@@ -94,47 +92,7 @@ export function palmFrame(
 }
 
 /**
- * Which way round the fingers run on screen, as +1 or -1.
- *
- * Read from a flat frame on purpose, even though the frame above no longer is.
- * Orienting the hand wrong for one frame is a wobble; picking the wrong model
- * rebuilds the rig, so this stays on the steady reading. Chasing depth noise
- * here is what used to flip the glove between faces mid-gesture.
- *
- * For two vectors in the plane a cross product is only its z term, so the sign
- * is read straight off without building a third vector.
- */
-export function layoutSign(frame: Frame): number {
-  return (
-    Math.sign(frame.across.x * frame.up.y - frame.across.y * frame.up.x) || 1
-  );
-}
-
-/**
- * How much to trust `layoutSign`. Near edge-on the two axes close up on each
- * other and the sign stops meaning anything, so the caller waits.
- */
-export function layoutSkew(frame: Frame): number {
-  return Math.abs(frame.across.dot(frame.up));
-}
-
-/**
- * How much of a hand there was to measure across the knuckles, relative to its
- * length: 0 when the span has collapsed, around 0.5 for an open hand.
- *
- * Skew alone does not catch this, and that gap is why the glove would turn
- * inside out from nothing. Fold the fingers or hold the hand edge-on and the
- * span across the knuckles shrinks to noise — but noise normalises to unit
- * length like anything else, and lands square to `up` about as often as not,
- * so it sails through a skew check. The sign it carries is then a coin flip,
- * and acting on it rebuilds the rig and mirrors the model mid-gesture.
- */
-export function layoutSpread(frame: Frame): number {
-  return frame.acrossSpan / Math.max(frame.upSpan, 1e-5);
-}
-
-/**
- * The visual size the glove is locked to, in world units.
+ * The visual size the hand is locked to, in world units.
  *
  * Apparent hand size grows and shrinks with distance to the camera, and
  * following it made the glove — and the reach the game tests against — pulse

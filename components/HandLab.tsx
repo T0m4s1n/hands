@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { EnableCameraButton } from "@/components/EnableCameraButton";
-import { handTuning, handView } from "@/components/GloveHand";
+import { handTuning, handView } from "@/components/RobotHand";
 import { Sheet } from "@/components/ui";
 import { useHandTracking, type TrackedHand } from "@/hooks/useHandTracking";
 
@@ -47,28 +47,12 @@ const KNOBS: {
     step: 0.05,
   },
   {
-    key: "turnRate",
-    label: "Suavizado del giro",
-    hint: "Más bajo estabiliza la mano entera; demasiado bajo y gira tarde",
-    min: 2,
-    max: 40,
-    step: 0.5,
-  },
-  {
-    key: "tilt",
-    label: "Inclinación de la palma",
-    hint: "Cuánta profundidad creerse al girar la mano; en 0 sólo gira de plano",
+    key: "depthScale",
+    label: "Profundidad de la mano",
+    hint: "En 1 los dedos se acortan al girar hacia la cámara; más bajo aplana",
     min: 0,
     max: 1,
     step: 0.05,
-  },
-  {
-    key: "fingerReach",
-    label: "Zona muerta de dedos",
-    hint: "Más alto curva los dedos de más; más bajo no los curva",
-    min: 0.6,
-    max: 1,
-    step: 0.01,
   },
 ];
 
@@ -230,27 +214,18 @@ export function HandLab() {
 
           <div className="border-t border-separator pt-3">
             <p className="t-caption text-label-3">
-              La cara mostrada y el modelo se eligen solos a partir de los
-              puntos. El interruptor de abajo solo hace falta si la regla salió
-              invertida.
+              La mano se arma directamente sobre los puntos, así que la
+              lateralidad sale sola: no hay modelo que elegir ni cara que
+              corregir.
             </p>
             <Toggle
-              checked={handView.faceDorsal}
+              checked={handView.showPalm}
               onChange={(next) => {
-                handView.faceDorsal = next;
+                handView.showPalm = next;
                 bump((value) => value + 1);
               }}
             >
-              Dorso hacia el jugador
-            </Toggle>
-            <Toggle
-              checked={handView.swapHands}
-              onChange={(next) => {
-                handView.swapHands = next;
-                bump((value) => value + 1);
-              }}
-            >
-              Invertir elección de modelo
+              Placa de palma
             </Toggle>
           </div>
 

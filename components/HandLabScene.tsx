@@ -2,7 +2,7 @@
 
 import { Suspense, type RefObject } from "react";
 import { Canvas } from "@react-three/fiber";
-import { HandGloves } from "@/components/GloveHand";
+import { HandGloves } from "@/components/RobotHand";
 import { LandmarkDots } from "@/components/LandmarkDots";
 import type { TrackedHand } from "@/hooks/useHandTracking";
 

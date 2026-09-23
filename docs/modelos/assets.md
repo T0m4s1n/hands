@@ -1,6 +1,6 @@
 # Assets
 
-Todo en `public/`. **2,7 MB en total.**
+Todo en `public/`. **2,5 MB en total.**
 
 ```
 public/
@@ -60,14 +60,14 @@ y cinco personas en ocho llamadas».
 > como cajas. Ver [cafe-y-multitud.md](cafe-y-multitud.md). Esta carpeta y su
 > `CREDITS.md` describen un enfoque superado y hoy son 1,0 MB muerto.
 
-## `models/hand-*.glb` — las manos
+## Las manos ya no son un modelo
 
-De `@webxr-input-profiles/assets`, **MIT**, los mismos modelos que usa three
-para el seguimiento de manos en WebXR.
+Hubo aquí dos glTF de `@webxr-input-profiles/assets` (MIT), y se cargaban los
+dos porque un esqueleto tiene quiralidad propia y había que elegir cuál ponerse.
 
-Se cargan los dos (`GloveHand.tsx:22-25`) "because which one a hand needs is
-measured from the landmarks, not assumed: **the camera is mirrored, and a mirror
-turns a right hand into a left one**".
+**Se borraron.** La mano se construye ahora directamente sobre los landmarks,
+así que no hay malla que cargar, ni par espejado entre el que elegir, ni 184 KB
+que descargar. Ver [../logica/mano.md](../logica/mano.md).
 
 ## `cafes/` — las tres fotografías
 
@@ -89,5 +89,4 @@ que viaja al visitante son unos 40 KB en total.
 | Qué | Licencia |
 | --- | --- |
 | Modelos de Kenney (kit, café, multitud) | CC0 1.0 |
-| Manos WebXR | MIT |
 | Fotografías de los cafés | Unsplash |

@@ -23,7 +23,7 @@ recogen en vez de sustituirlos.
 | --- | --- |
 | [seguimiento-de-manos.md](logica/seguimiento-de-manos.md) | Cámara, MediaPipe, coordenadas, suavizado, pellizco |
 | [asignacion-de-manos.md](logica/asignacion-de-manos.md) | Qué detección es qué mano, y por qué no basta la etiqueta |
-| [guante.md](logica/guante.md) | El modelo articulado: rig, IK, límites de articulación |
+| [mano.md](logica/mano.md) | Cómo se dibuja la mano a partir de los puntos |
 | [bucle-de-juego.md](logica/bucle-de-juego.md) | `CoffeeGame`: estado, agarre, reloj, puntuación |
 | [recetas-y-etapas.md](logica/recetas-y-etapas.md) | Los tres cafés y cómo se puntúa cada etapa |
 | [gestos.md](logica/gestos.md) | Detectores puros: giro, golpe, vertido |

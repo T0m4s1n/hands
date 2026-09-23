@@ -27,7 +27,7 @@ Lo que **no** está cubierto: el bucle de render, el rig del guante, la carga de
 modelos, el post-proceso y toda la interfaz. Eso se verifica a mano en el
 navegador y en `/manos` y `/modelos`.
 
-## Los ocho archivos
+## Los siete archivos
 
 | Archivo | Cubre |
 | --- | --- |
@@ -37,15 +37,14 @@ navegador y en `/manos` y `/modelos`.
 | `components/coffee/physical.test.ts` | Volumen de líquido y sólidos |
 | `components/coffee/slosh.test.ts` | La onda de la superficie |
 | `components/coffee/solid.test.ts` | La altura de transporte |
-| `hooks/palmFrame.test.ts` | Hacia dónde mira la mano |
-| `hooks/boneAim.test.ts` | Hacia dónde apunta cada hueso, y que no salte |
+| `hooks/palmFrame.test.ts` | El plano de la palma y el tamaño fijo |
 
-Cuatro de los ocho son bloques de aserciones a nivel superior; `solid.test.ts`,
-`palmFrame.test.ts` y `boneAim.test.ts` usan `test()` de `node:test`.
+Cuatro de los siete son bloques de aserciones a nivel superior; `solid.test.ts`
+y `palmFrame.test.ts` usan `test()` de `node:test`.
 
 ## Las pruebas que valen más
 
-Cinco, y las cinco nacieron de un fallo real:
+Cuatro, y las cuatro nacieron de un fallo real:
 
 1. **`anim.test.ts`** — un solo fotograma de un segundo deja el muelle finito.
    Una pestaña que vuelve de segundo plano entrega justo eso.
@@ -58,13 +57,6 @@ Cinco, y las cinco nacieron de un fallo real:
    una mano girada dan una marca **idéntica** a la de una mano plana. No
    atenuada: idéntica, a cero grados. Las dos primeras pruebas dejan ese fallo
    escrito para que no pueda volver sin que algo falle.
-5. **`boneAim.test.ts`** — dos huesos inclinados en sentidos opuestos de
-   profundidad tienen que apuntar en sentidos opuestos. Antes recibían el mismo
-   signo, calculado una vez para toda la mano, y por eso una mano en ángulo se
-   aplastaba con todos los dedos juntos. Y dos más comprueban que la mezcla
-   **no da saltos**: al afinar el barrido, el salto máximo tiene que encoger.
-   Un conmutador daría el mismo salto por fino que fuera el barrido, así que
-   esa prueba no se puede aprobar ajustando un número.
 
 Una nota sobre escribirlas: al redactar `boneAim.test.ts` la primera versión
 falló, y **era la prueba la que estaba mal**, no el código. Esperaba que la
