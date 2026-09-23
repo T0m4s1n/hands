@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --experimental-strip-types --test hooks/*.test.ts"
+    "test": "node --experimental-strip-types --test hooks/*.test.ts components/coffee/*.test.ts"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.0.1",
