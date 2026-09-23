@@ -28,12 +28,23 @@
 import { Vector3 } from "three";
 
 /**
- * Below this share of the bone's own length, the reported depth is too small
- * to have a meaningful sign and the caller's fallback is used instead. Scaled
- * by bone length rather than absolute, so a fingertip is not judged by the
- * same threshold as a metacarpal.
+ * How much reported depth counts as a confident reading, as a share of the
+ * bone's own length. Below it the caller's fallback takes over, and the two
+ * are **blended** across the range rather than switched between.
+ *
+ * Scaled by bone length rather than absolute, so a fingertip is not judged by
+ * the same threshold as a metacarpal.
+ *
+ * Wide on purpose. The blend is steepest where the bone lies flattest across
+ * the view, because that is where the direction vector is shortest and
+ * normalising it amplifies whatever is left. A narrow band puts all of that
+ * steepness into a few frames of noise; a wide one spreads it out, at the cost
+ * of leaning on the fallback further from the crossing.
  */
-export const DEPTH_DEADZONE = 0.12;
+export const DEPTH_DEADZONE = 0.25;
+
+const clamp = (value: number, low: number, high: number) =>
+  Math.min(high, Math.max(low, value));
 
 export type AimScratch = { perp: Vector3 };
 
@@ -76,11 +87,25 @@ export function boneAim(
   const depth =
     sideways < reach ? Math.sqrt(reach * reach - sideways * sideways) : 0;
 
-  // Believe the sign where there is enough of it to believe.
-  const sign =
-    Math.abs(measured) > DEPTH_DEADZONE * Math.max(restLength, 1e-5)
-      ? Math.sign(measured)
-      : fallbackSign || 1;
+  // How far the reading leans, and how much of it to believe, in one number:
+  // ±1 where it is unambiguous, 0 where there is nothing to read.
+  //
+  // Blended across that range rather than switched at a threshold, and that
+  // is the whole point. A hard switch makes a bone snap between two opposite
+  // directions every time the reading wanders over the line, which is a
+  // finger flicking back and forth several times a second — the reading is
+  // least certain exactly where it is nearest the threshold, so a threshold
+  // puts the most violent behaviour at the least reliable point.
+  //
+  // Blending, a bone whose depth cannot be read leans less rather than
+  // leaping: it passes through lying flat across the view, which is the
+  // least-wrong answer when nothing is known, and it gets there smoothly.
+  const lean = clamp(
+    measured / (DEPTH_DEADZONE * Math.max(restLength, 1e-5)),
+    -1,
+    1,
+  );
+  const sign = lean + (1 - Math.abs(lean)) * (fallbackSign || 1);
 
   out.copy(scratch.perp).addScaledVector(viewAxis, sign * depth);
   const length = out.length();

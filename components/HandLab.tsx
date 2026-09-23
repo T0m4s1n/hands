@@ -47,6 +47,14 @@ const KNOBS: {
     step: 0.05,
   },
   {
+    key: "turnRate",
+    label: "Suavizado del giro",
+    hint: "Más bajo estabiliza la mano entera; demasiado bajo y gira tarde",
+    min: 2,
+    max: 40,
+    step: 0.5,
+  },
+  {
     key: "tilt",
     label: "Inclinación de la palma",
     hint: "Cuánta profundidad creerse al girar la mano; en 0 sólo gira de plano",

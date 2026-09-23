@@ -61,12 +61,57 @@ test("fingers leaning forward come out in front of ones leaning back", () => {
   );
 });
 
-test("too little depth to read falls back to the caller's sign", () => {
-  const tiny = DEPTH_DEADZONE * 0.5;
+test("too little depth to read leans on the caller's fallback", () => {
+  // A tenth of the dead zone: almost nothing to read, so the fallback decides.
+  const tiny = DEPTH_DEADZONE * 0.1;
   const withPalm = aim(v(0, 0, 0), v(0.5, 0, tiny), 1, 1);
   const withBack = aim(v(0, 0, 0), v(0.5, 0, tiny), 1, -1);
-  assert.ok(withPalm.z > 0, "should have taken the fallback");
-  assert.ok(withBack.z < 0, "should have taken the other fallback");
+  assert.ok(withPalm.z > 0, "should have leaned on the fallback");
+  assert.ok(withBack.z < 0, "should have leaned on the other fallback");
+});
+
+/** The largest change in aim between neighbouring readings over a sweep. */
+function biggestStep(fallback: number, step: number) {
+  let previous = aim(v(0, 0, 0), v(0.4, 0, -0.4), 1, fallback).z;
+  let worst = 0;
+  for (let z = -0.4; z <= 0.4001; z += step) {
+    const at = aim(v(0, 0, 0), v(0.4, 0, z), 1, fallback).z;
+    worst = Math.max(worst, Math.abs(at - previous));
+    previous = at;
+  }
+  return worst;
+}
+
+test("the reading and the fallback blend, they do not switch", () => {
+  // The stability property, and the one that matters most here: a hard switch
+  // puts the most violent behaviour at exactly the least reliable reading,
+  // which is a finger flicking back and forth several times a second.
+  //
+  // Continuity is not a threshold, so this does not assert one. It refines
+  // the sweep and checks the largest jump shrinks with it. A switch would
+  // keep jumping the same distance however fine the sweep — that is what
+  // makes this test impossible to pass by tuning a number.
+  const coarse = biggestStep(-1, 0.004);
+  const fine = biggestStep(-1, 0.001);
+  assert.ok(
+    fine < coarse * 0.4,
+    `refining the sweep fourfold should shrink the jump: ${coarse.toFixed(4)} then ${fine.toFixed(4)}`,
+  );
+  // No absolute bar here on purpose. The aim moves fastest where the bone
+  // lies flattest, because normalising a short vector amplifies what is left,
+  // so any fixed number would be a guess tuned until it passed rather than a
+  // statement about the function. Refinement is the property; this is the
+  // evidence for it.
+});
+
+test("sweeping the depth never sends the aim backwards", () => {
+  const fallback = 1;
+  let previous = -Infinity;
+  for (let z = -0.5; z <= 0.5001; z += 0.01) {
+    const at = aim(v(0, 0, 0), v(0.4, 0, z), 1, fallback).z;
+    assert.ok(at >= previous - 1e-9, `aim went backwards at depth ${z}`);
+    previous = at;
+  }
 });
 
 test("the dead zone scales with bone length", () => {

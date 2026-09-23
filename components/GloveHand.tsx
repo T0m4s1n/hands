@@ -21,6 +21,7 @@ import {
   LOCKED_SPAN,
   layoutSign,
   layoutSkew,
+  layoutSpread,
   lockSpan,
   makeFrame,
   palmFrame,
@@ -232,6 +233,17 @@ export const handTuning = {
    *  proportions never match the model's, and reading that as foreshortening
    *  would leave every finger permanently half curled. */
   fingerReach: 0.82,
+  /**
+   * How quickly the hand turns to face where tracking says it faces.
+   *
+   * Deliberately slower than the rate positions follow, because the two are
+   * not comparable: an error of a degree in the palm swings every fingertip
+   * across the screen, while an error of a millimetre in a fingertip moves a
+   * fingertip. Orientation was following at the position rate, and raising
+   * that rate to fix the lag took the damping off the turn along with it —
+   * which is most of why the hand started snapping about.
+   */
+  turnRate: 11,
   /** Arriving is quick, leaving gentler, so a dropped frame is not a flicker. */
   showRate: 14,
   hideRate: 5,
@@ -257,6 +269,11 @@ export const handView = {
 // many frames must agree before swapping models. Near edge-on the two axes
 // close up and the sign means nothing.
 const LAYOUT_CONFIDENCE = 0.85;
+/**
+ * The least span across the knuckles, as a share of the hand's length, that
+ * counts as enough hand to read a layout from. An open hand sits near 0.5.
+ */
+const LAYOUT_SPREAD = 0.3;
 const LAYOUT_FRAMES = 6;
 /** Radians per second a single bone may turn. Real fingers close well inside
  *  this; a solve that jumps does not. */
@@ -793,7 +810,15 @@ export function GloveHand({
     // the sign is read straight off rather than building a third vector.
     const layout = layoutSign(glove.flat);
     const wanted = handView.faceDorsal ? -layout : layout;
-    const confident = layoutSkew(glove.flat) < LAYOUT_CONFIDENCE;
+    // Two separate ways this reading goes bad, and skew only catches one.
+    // A hand with its fingers folded, or held edge-on, barely spans its own
+    // knuckles: what is left is noise that normalises like anything else and
+    // sits square to `up` often enough to pass a skew check while carrying a
+    // sign that is a coin flip. Acting on it rebuilds the rig and mirrors the
+    // model, which is the turn that came out of nowhere.
+    const confident =
+      layoutSkew(glove.flat) < LAYOUT_CONFIDENCE &&
+      layoutSpread(glove.flat) > LAYOUT_SPREAD;
     glove.swapCooldown = Math.max(0, glove.swapCooldown - dt);
     if (
       tracked &&
@@ -839,7 +864,8 @@ export function GloveHand({
       );
       glove.quat.setFromRotationMatrix(glove.basis).multiply(rig.modelBasisInv);
     }
-    if (glove.turned) glove.smoothed.slerp(glove.quat, posFollow);
+    const turnFollow = 1 - Math.exp(-handTuning.turnRate * dt);
+    if (glove.turned) glove.smoothed.slerp(glove.quat, turnFollow);
     else glove.smoothed.copy(glove.quat);
     glove.turned = true;
     glove.quat.copy(glove.smoothed);

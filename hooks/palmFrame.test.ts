@@ -9,7 +9,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Vector3 } from "three";
-import { makeFrame, palmFrame, layoutSign, layoutSkew } from "./palmFrame.ts";
+import {
+  makeFrame,
+  palmFrame,
+  layoutSign,
+  layoutSkew,
+  layoutSpread,
+} from "./palmFrame.ts";
 
 const v = (x: number, y: number, z: number) => new Vector3(x, y, z);
 
@@ -136,4 +142,55 @@ test("skew reports how edge-on the hand is", () => {
     makeFrame(),
   );
   assert.ok(layoutSkew(edgeOn) > 0.5, "an edge-on hand should report high skew");
+});
+
+test("a collapsed span is caught by spread where skew lets it through", () => {
+  // The failure that turned the glove inside out from nothing: fingers folded,
+  // so there is almost no span across the knuckles. What is left is noise —
+  // but it normalises like anything else and here it lands perfectly square to
+  // `up`, so skew reports the frame as trustworthy when it is not.
+  const collapsed = palmFrame(
+    v(0, 0, 0),
+    v(0, 1, 0),
+    v(-0.004, 0.8, 0),
+    v(0.004, 0.8, 0),
+    0,
+    makeFrame(),
+  );
+  assert.ok(
+    layoutSkew(collapsed) < 0.2,
+    "skew alone thinks this frame is fine, which is the whole point",
+  );
+  assert.ok(
+    layoutSpread(collapsed) < 0.05,
+    `spread should see through it, got ${layoutSpread(collapsed)}`,
+  );
+});
+
+test("an open hand has plenty of spread", () => {
+  const open = frameOf(FLAT, 0);
+  assert.ok(
+    layoutSpread(open) > 0.3,
+    `an open hand should read well above the bar, got ${layoutSpread(open)}`,
+  );
+});
+
+test("spread falls away as a hand turns edge-on", () => {
+  let previous = Infinity;
+  // Rolling the knuckle span toward the view axis shortens what is left of it
+  // in the plane, which is exactly the case that must stop a model swap.
+  for (const width of [0.4, 0.3, 0.2, 0.1, 0.02]) {
+    const frame = palmFrame(
+      v(0, 0, 0),
+      v(0, 1, 0),
+      v(-width, 0.8, 0),
+      v(width, 0.8, 0),
+      0,
+      makeFrame(),
+    );
+    const spread = layoutSpread(frame);
+    assert.ok(spread < previous, "spread should shrink with the span");
+    previous = spread;
+  }
+  assert.ok(previous < 0.1, "an edge-on hand should end well under the bar");
 });

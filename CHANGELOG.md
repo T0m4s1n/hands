@@ -13,6 +13,26 @@ sirve de nada dentro de seis meses.
 
 ### Las manos responden y giran
 
+- **Arreglada la inestabilidad que introdujeron los dos cambios de abajo.** El
+  guante se retorcía de la nada y dejaba de funcionar. Tres causas, y dos eran
+  mías:
+  - El signo de profundidad por hueso **conmutaba en un umbral**, así que cada
+    vez que la lectura cruzaba la zona muerta el hueso saltaba entre dos
+    direcciones opuestas — varias veces por segundo, y con el comportamiento
+    más violento justo donde la lectura es menos fiable. Ahora se **mezcla**:
+    `signo = lean + (1 - |lean|) · respaldo`. Un hueso ilegible se inclina
+    menos en vez de saltar.
+  - **La orientación se suavizaba al ritmo de la posición**, y subir ese ritmo
+    para quitar el retardo le quitó el amortiguado al giro. Ahora tiene el suyo
+    (`turnRate: 11`): un grado de error en la palma barre cada yema por la
+    pantalla, un milímetro en una yema mueve una yema.
+  - **El cambio de modelo se disparaba con basura.** Sólo comprobaba el sesgo
+    entre los dos ejes, y con los dedos doblados el palmo entre nudillos
+    colapsa a ruido — que se normaliza como cualquier cosa y cae perpendicular
+    bastante a menudo, así que pasaba el control llevando un signo que era cara
+    o cruz. Cambiar de modelo **reconstruye el rig**, de ahí el giro repentino.
+    Añadido `layoutSpread`, que mide cuánta mano había que medir.
+
 - **Recuperada la profundidad por hueso.** `trackedDirection` reconstruía la
   profundidad de cada hueso con un triángulo rectángulo y le aplicaba **un signo
   calculado una sola vez para toda la mano** — el de «doblar hacia la palma».

@@ -120,6 +120,7 @@ Cuatro mandos (`KNOBS`, `:17-57`), cada uno con su pista:
 | Suavizado en reposo | 1–40 | «Más bajo quita temblor; demasiado bajo y la mano flota» |
 | Suavizado en movimiento | 5–120 | «Más alto responde antes y deja pasar más ruido» |
 | Amortiguación de profundidad | 0.05–1 | «La profundidad es el eje más ruidoso» |
+| Suavizado del giro | 2–40 | «Más bajo estabiliza la mano entera; demasiado bajo y gira tarde» |
 | Inclinación de la palma | 0–1 | «Cuánta profundidad creerse al girar la mano; en 0 sólo gira de plano» |
 | Zona muerta de dedos | 0.6–1 | «Más alto curva los dedos de más; más bajo no los curva» |
 

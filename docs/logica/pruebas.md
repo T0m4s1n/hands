@@ -38,7 +38,7 @@ navegador y en `/manos` y `/modelos`.
 | `components/coffee/slosh.test.ts` | La onda de la superficie |
 | `components/coffee/solid.test.ts` | La altura de transporte |
 | `hooks/palmFrame.test.ts` | Hacia dónde mira la mano |
-| `hooks/boneAim.test.ts` | Hacia dónde apunta cada hueso |
+| `hooks/boneAim.test.ts` | Hacia dónde apunta cada hueso, y que no salte |
 
 Cuatro de los ocho son bloques de aserciones a nivel superior; `solid.test.ts`,
 `palmFrame.test.ts` y `boneAim.test.ts` usan `test()` de `node:test`.
@@ -61,7 +61,10 @@ Cinco, y las cinco nacieron de un fallo real:
 5. **`boneAim.test.ts`** — dos huesos inclinados en sentidos opuestos de
    profundidad tienen que apuntar en sentidos opuestos. Antes recibían el mismo
    signo, calculado una vez para toda la mano, y por eso una mano en ángulo se
-   aplastaba con todos los dedos juntos.
+   aplastaba con todos los dedos juntos. Y dos más comprueban que la mezcla
+   **no da saltos**: al afinar el barrido, el salto máximo tiene que encoger.
+   Un conmutador daría el mismo salto por fino que fuera el barrido, así que
+   esa prueba no se puede aprobar ajustando un número.
 
 Una nota sobre escribirlas: al redactar `boneAim.test.ts` la primera versión
 falló, y **era la prueba la que estaba mal**, no el código. Esperaba que la

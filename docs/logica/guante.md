@@ -70,12 +70,22 @@ plane simply cannot express it".
    que reaparezca ya posada.
 3. **Suavizado #2.** Ver abajo.
 4. **Dos marcas de palma**, de `hooks/palmFrame.ts`. Ver abajo.
-5. **Elección de modelo**. Un cambio exige: estar siguiendo, confianza
-   (`layoutSkew < LAYOUT_CONFIDENCE 0.85`, porque casi de canto los dos ejes se
-   juntan y el signo no significa nada), `LAYOUT_FRAMES = 6` fotogramas de
-   acuerdo, y `SWAP_COOLDOWN = 0.6` s de bloqueo después. Sigue sin usar
-   profundidad: orientar mal la mano un fotograma es un bamboleo, pero elegir
-   mal el modelo **reconstruye el rig**.
+5. **Elección de modelo**. Un cambio exige **dos** medidas de confianza,
+   `LAYOUT_FRAMES = 6` fotogramas de acuerdo y `SWAP_COOLDOWN = 0.6` s de
+   bloqueo después. Sigue sin usar profundidad: orientar mal la mano un
+   fotograma es un bamboleo, pero elegir mal el modelo **reconstruye el rig**,
+   y eso es el giro que salía de la nada.
+
+   | Medida | Qué caza |
+   | --- | --- |
+   | `layoutSkew < 0.85` | La mano casi de canto: los dos ejes se juntan |
+   | `layoutSpread > 0.3` | El palmo entre nudillos colapsado a ruido |
+
+   **`layoutSkew` sola no basta**, y ese hueco era el fallo. Con los dedos
+   doblados apenas hay palmo entre nudillos; lo que queda es ruido, pero el
+   ruido se normaliza como cualquier cosa y cae perpendicular a `up` con
+   bastante frecuencia, así que pasaba el control de sesgo llevando un signo
+   que era cara o cruz.
 6. **Colocación** (`:786-818`). Escala `= (LOCKED_SPAN / rig.modelSpan) * shown`.
    La corrección de cara dorsal niega **dos** ejes — "that is a half turn about
    the hand's own up axis… Negating a single axis would mirror the hand."
@@ -94,7 +104,15 @@ rate        = stillRate 16 → movingRate 90   según speed / SPEED_FULL (3.2)
 REST_RATE   = 2.6                             manos quietas
 posFollow   = 1 - exp(-rate · dt)             X e Y
 depthFollow = 1 - exp(-rate · depthDamping · dt)   depthDamping = 0.75
+turnFollow  = 1 - exp(-turnRate · dt)         turnRate = 11, sólo la orientación
 ```
+
+**La orientación tiene su propio ritmo, y más lento.** Los dos no son
+comparables: un grado de error en la palma barre cada yema por la pantalla,
+mientras que un milímetro de error en una yema mueve una yema. La orientación
+seguía al ritmo de la posición, y subir ese ritmo para quitar el retardo le
+quitó de paso el amortiguado al giro — que es la mayor parte de por qué la mano
+empezó a dar tirones.
 
 **Estos números eran 7 y 34, y eran la mayor fuente de retardo de la mano.** El
 hook ya filtra de 14 a 90 antes de que estos landmarks lleguen, y dos filtros
@@ -180,16 +198,26 @@ distintas, y el tracker reportándolas bien— no se podía expresar en absoluto
 todos los dedos colapsaban sobre el mismo eje y el modelo se quedaba casi plano
 mientras los puntos de seguimiento al lado mostraban otra cosa.
 
-Ahora el signo sale de la medida **por hueso**. El valor global queda sólo como
-respaldo, para huesos cuya profundidad medida es demasiado pequeña para leerle
-un signo.
+Ahora el signo sale de la medida **por hueso**, y el valor global queda sólo
+como respaldo.
 
 ```
-DEPTH_DEADZONE = 0.12    // como fracción de la longitud del hueso
+DEPTH_DEADZONE = 0.25    // como fracción de la longitud del hueso
+lean = clamp(medida / (DEPTH_DEADZONE · longitud), -1, 1)
+signo = lean + (1 - |lean|) · respaldo
 ```
 
-La zona muerta escala con la longitud del hueso y no es absoluta: la misma
-profundidad en unidades es señal en una falange corta y ruido en un metacarpo.
+**Se mezclan, no se conmutan**, y eso es lo importante para la estabilidad. Un
+umbral duro haría que el hueso saltara entre dos direcciones opuestas cada vez
+que la lectura cruza la línea — varias veces por segundo — y pondría el
+comportamiento más violento justo donde la lectura es menos fiable. Mezclando,
+un hueso cuya profundidad no se puede leer **se inclina menos en vez de saltar**:
+pasa por quedar plano respecto a la vista, que es la respuesta menos equivocada
+cuando no se sabe nada.
+
+La zona muerta escala con la longitud del hueso y es ancha a propósito: la
+mezcla es más empinada donde el hueso queda más plano, porque ahí el vector es
+más corto y normalizarlo amplifica lo que queda.
 
 ### Lo que sigue sin creerse
 
