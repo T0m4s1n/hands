@@ -110,11 +110,11 @@ export function DebugOverlay({
   }
 
   return (
-    <div className="pointer-events-auto w-[min(100%,20rem)] rounded-2xl border border-white/15 bg-slate-950/80 p-3 text-slate-100 shadow-2xl backdrop-blur-md">
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-        Diagnostics
+    <div className="material squircle pointer-events-auto w-[min(100%,20rem)] rounded-card p-3">
+      <p className="t-caption mb-2 font-semibold uppercase tracking-[0.12em] text-label-3">
+        Diagnóstico
       </p>
-      <div className="relative overflow-hidden rounded-xl bg-black">
+      <div className="squircle relative overflow-hidden rounded-tile bg-black">
         {video}
         <canvas
           ref={canvasRef}
@@ -122,29 +122,36 @@ export function DebugOverlay({
         />
       </div>
 
-      <div className="mt-3 space-y-3 text-xs">
+      <div className="mt-3 space-y-3">
         <div className="flex flex-wrap gap-2">
           {hud.length === 0 ? (
-            <span className="text-slate-400">Show a hand to the camera</span>
+            <span className="t-caption text-label-3">
+              Muestra una mano a la cámara
+            </span>
           ) : (
             hud.map((hand) => (
               <span
                 key={hand.handedness}
-                className={`rounded-full px-2 py-1 font-medium ${
+                className={`t-caption squircle rounded-full px-2.5 py-1 font-medium tabular-nums ${
                   hand.isGrabbing
-                    ? "bg-emerald-500/20 text-emerald-300"
-                    : "bg-cyan-500/15 text-cyan-200"
+                    ? "bg-tint/20 text-tint"
+                    : "bg-fill text-label-2"
                 }`}
               >
-                {hand.handedness} pinch {hand.pinchDistance.toFixed(2)}
-                {hand.isGrabbing ? " · grab" : ""}
+                {hand.handedness} · {hand.pinchDistance.toFixed(2)}
+                {hand.isGrabbing ? " · agarra" : ""}
               </span>
             ))
           )}
         </div>
 
-        <label className="block space-y-1 text-slate-300">
-          <span>Pinch-in threshold ({thresholds.enter.toFixed(2)})</span>
+        <label className="block space-y-1.5">
+          <span className="t-caption flex justify-between text-label-2">
+            Cierre del pellizco
+            <span className="font-mono text-label-3 tabular-nums">
+              {thresholds.enter.toFixed(2)}
+            </span>
+          </span>
           <input
             type="range"
             min={0.1}
@@ -157,11 +164,16 @@ export function DebugOverlay({
                 enter: Number(event.target.value),
               })
             }
-            className="w-full accent-cyan-400"
+            className="w-full"
           />
         </label>
-        <label className="block space-y-1 text-slate-300">
-          <span>Pinch-out threshold ({thresholds.exit.toFixed(2)})</span>
+        <label className="block space-y-1.5">
+          <span className="t-caption flex justify-between text-label-2">
+            Apertura de la mano
+            <span className="font-mono text-label-3 tabular-nums">
+              {thresholds.exit.toFixed(2)}
+            </span>
+          </span>
           <input
             type="range"
             min={0.16}
@@ -174,7 +186,7 @@ export function DebugOverlay({
                 exit: Number(event.target.value),
               })
             }
-            className="w-full accent-cyan-400"
+            className="w-full"
           />
         </label>
       </div>

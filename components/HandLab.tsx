@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { EnableCameraButton } from "@/components/EnableCameraButton";
-import { handTuning } from "@/components/GloveHand";
+import { handTuning, handView } from "@/components/GloveHand";
+import { Sheet } from "@/components/ui";
 import { useHandTracking, type TrackedHand } from "@/hooks/useHandTracking";
 
 const HandLabScene = dynamic(
@@ -44,30 +45,6 @@ const KNOBS: {
     min: 0.05,
     max: 1,
     step: 0.05,
-  },
-  {
-    key: "palmReach",
-    label: "Zona muerta de la palma",
-    hint: "Más bajo exagera el giro de muñeca; más alto lo apaga",
-    min: 0.7,
-    max: 1,
-    step: 0.01,
-  },
-  {
-    key: "depthLean",
-    label: "Sensibilidad de inclinación",
-    hint: "Cuánta profundidad reportada cuenta como giro completo",
-    min: 0.02,
-    max: 0.4,
-    step: 0.01,
-  },
-  {
-    key: "turnRate",
-    label: "Velocidad de giro",
-    hint: "Qué tan rápido asienta la palma una orientación nueva",
-    min: 1,
-    max: 30,
-    step: 0.5,
   },
   {
     key: "fingerReach",
@@ -115,6 +92,68 @@ function useHandReadout(handsRef: { current: TrackedHand[] }) {
   return rows;
 }
 
+/** A labelled slider, matching the one control style the app uses everywhere. */
+function Knob({
+  label,
+  hint,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="t-footnote flex justify-between text-label-2">
+        {label}
+        <span className="font-mono text-label-3 tabular-nums">
+          {value.toFixed(2)}
+        </span>
+      </span>
+      <input
+        type="range"
+        className="mt-1.5 w-full"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
+      <span className="t-caption mt-1 block text-label-3">{hint}</span>
+    </label>
+  );
+}
+
+function Toggle({
+  checked,
+  onChange,
+  children,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <label className="t-footnote flex min-h-[2.25rem] cursor-pointer items-center gap-2.5 text-label-2">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-4 w-4 accent-[var(--color-tint)]"
+      />
+      {children}
+    </label>
+  );
+}
+
 export function HandLab() {
   const { videoRef, handsRef, status, error, start, enablePointerFallback } =
     useHandTracking();
@@ -125,6 +164,25 @@ export function HandLab() {
   const ready = status === "ready";
   const loading = status === "loading-model";
 
+  // Ask for the camera straight away. Once permission is granted this route
+  // costs a reload and nothing else, which is the point of having it.
+  useEffect(() => {
+    if (status !== "idle") return;
+    let cancelled = false;
+    navigator.mediaDevices
+      ?.getUserMedia({ video: true })
+      .then((stream) => {
+        if (cancelled) stream.getTracks().forEach((track) => track.stop());
+        else void start(stream);
+      })
+      .catch(() => {
+        // Permission not granted yet: the gate below takes over.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [status, start]);
+
   // The scene never needs to re-render for a slider: the tuning object is read
   // inside the frame loop. Keeping its element identity stable avoids
   // rebuilding the canvas on every drag.
@@ -134,104 +192,116 @@ export function HandLab() {
   );
 
   return (
-    <div className="relative h-dvh w-full overflow-hidden bg-[#141820] text-stone-100">
+    <div className="relative h-dvh w-full overflow-hidden bg-[#141820] text-label">
       <div className="absolute inset-0">{scene}</div>
       <video ref={videoRef} className="hidden" playsInline muted />
 
-      <div className="pointer-events-none absolute inset-0 z-10 flex justify-between gap-4 p-4 sm:p-6">
-        <div className="pointer-events-auto flex w-64 flex-col gap-3 self-start rounded-2xl border border-white/10 bg-stone-950/80 p-4 backdrop-blur">
-          <div className="flex items-center justify-between">
-            <h1 className="text-sm font-semibold">Laboratorio de manos</h1>
+      <div className="pointer-events-none absolute inset-0 z-10 flex flex-col gap-4 overflow-y-auto p-4 sm:flex-row sm:justify-between sm:overflow-visible sm:p-6">
+        <Sheet className="pointer-events-auto flex w-full flex-col gap-4 p-5 sm:w-64 sm:self-start">
+          <div className="flex items-baseline justify-between gap-2">
+            <h1 className="t-headline">Laboratorio</h1>
             <Link
-              href="/"
-              className="text-xs text-stone-400 underline-offset-2 hover:underline"
+              href="/jugar"
+              className="t-footnote text-tint transition hover:brightness-110"
             >
               al juego
             </Link>
           </div>
 
-          <label className="flex items-center gap-2 text-xs text-stone-300">
-            <input
-              type="checkbox"
-              checked={showLandmarks}
-              onChange={(event) => setShowLandmarks(event.target.checked)}
-            />
+          <Toggle checked={showLandmarks} onChange={setShowLandmarks}>
             Mostrar puntos del tracking
-          </label>
+          </Toggle>
 
-          <div className="space-y-1 text-xs">
+          <div className="border-t border-separator pt-3">
+            <p className="t-caption text-label-3">
+              La cara mostrada y el modelo se eligen solos a partir de los
+              puntos. El interruptor de abajo solo hace falta si la regla salió
+              invertida.
+            </p>
+            <Toggle
+              checked={handView.faceDorsal}
+              onChange={(next) => {
+                handView.faceDorsal = next;
+                bump((value) => value + 1);
+              }}
+            >
+              Dorso hacia el jugador
+            </Toggle>
+            <Toggle
+              checked={handView.swapHands}
+              onChange={(next) => {
+                handView.swapHands = next;
+                bump((value) => value + 1);
+              }}
+            >
+              Invertir elección de modelo
+            </Toggle>
+          </div>
+
+          <div className="border-t border-separator pt-3">
             {rows.length === 0 ? (
-              <p className="text-stone-500">Ninguna mano detectada</p>
+              <p className="t-footnote text-label-3">Ninguna mano detectada</p>
             ) : (
               rows.map((row) => (
-                <p key={row.handedness} className="flex justify-between gap-2">
-                  <span className="text-stone-400">{row.handedness}</span>
-                  <span className="font-mono">
-                    pellizco {row.pinch.toFixed(2)}
-                    {row.grabbing ? " ·agarra" : ""}
+                <p
+                  key={row.handedness}
+                  className="t-footnote flex justify-between gap-2 text-label-2"
+                >
+                  <span>{row.handedness}</span>
+                  <span className="font-mono text-label-3 tabular-nums">
+                    {row.pinch.toFixed(2)}
+                    {row.grabbing ? " · agarra" : ""}
                   </span>
                 </p>
               ))
             )}
           </div>
-        </div>
+        </Sheet>
 
-        <div className="pointer-events-auto flex w-72 flex-col gap-3 self-start rounded-2xl border border-white/10 bg-stone-950/80 p-4 backdrop-blur">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Ajustes</h2>
+        <Sheet className="pointer-events-auto flex w-full flex-col gap-4 p-5 sm:w-72 sm:self-start">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="t-headline">Ajustes</h2>
             <button
               type="button"
               onClick={() => {
                 Object.assign(handTuning, DEFAULTS);
                 bump((value) => value + 1);
               }}
-              className="rounded-full border border-white/15 px-2 py-0.5 text-xs text-stone-300 hover:bg-stone-800"
+              className="t-footnote squircle rounded-full bg-fill px-3 py-1.5 text-label-2 transition hover:bg-fill-2"
             >
-              restablecer
+              Restablecer
             </button>
           </div>
 
           {KNOBS.map((knob) => (
-            <label key={knob.key} className="block">
-              <span className="flex justify-between text-xs text-stone-300">
-                {knob.label}
-                <span className="font-mono text-stone-400">
-                  {handTuning[knob.key].toFixed(2)}
-                </span>
-              </span>
-              <input
-                type="range"
-                className="w-full accent-amber-400"
-                min={knob.min}
-                max={knob.max}
-                step={knob.step}
-                value={handTuning[knob.key]}
-                onChange={(event) => {
-                  handTuning[knob.key] = Number(event.target.value);
-                  bump((value) => value + 1);
-                }}
-              />
-              <span className="block text-[11px] leading-4 text-stone-500">
-                {knob.hint}
-              </span>
-            </label>
+            <Knob
+              key={knob.key}
+              label={knob.label}
+              hint={knob.hint}
+              min={knob.min}
+              max={knob.max}
+              step={knob.step}
+              value={handTuning[knob.key]}
+              onChange={(value) => {
+                handTuning[knob.key] = value;
+                bump((count) => count + 1);
+              }}
+            />
           ))}
-        </div>
+        </Sheet>
       </div>
 
       {!ready && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-stone-950/75 p-6 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-3xl border border-white/10 bg-stone-900/90 p-6 text-center shadow-2xl">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Laboratorio de manos
-            </h1>
-            <p className="mt-3 text-sm leading-6 text-stone-300">
+        <div className="scrim absolute inset-0 z-20 flex items-center justify-center p-6">
+          <Sheet className="w-full max-w-md p-8 text-center">
+            <h1 className="t-large-title">Laboratorio de manos</h1>
+            <p className="t-body mt-3 text-label-2">
               {loading
                 ? "Cámara lista. Cargando el modelo de seguimiento…"
                 : "Solo las manos, sin juego, para afinar el seguimiento."}
             </p>
             {error && (
-              <p className="mt-3 text-left text-sm leading-6 text-amber-200">
+              <p className="t-subhead mt-4 rounded-tile bg-fill p-3 text-left text-label-2">
                 {error}
               </p>
             )}
@@ -241,7 +311,7 @@ export function HandLab() {
                 onPointerFallback={enablePointerFallback}
               />
             )}
-          </div>
+          </Sheet>
         </div>
       )}
     </div>

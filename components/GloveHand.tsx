@@ -34,14 +34,27 @@ MODEL_URLS.forEach((url) => useGLTF.preload(url));
 // bends fingers sideways and backwards and the result looks like a horror prop:
 // `splay` caps sideways deviation from the parent bone, `curl` caps the bend
 // toward the palm, and `hyper` caps the bend the other way (all radians).
-type Limits = { splay: number; curl: number; hyper: number };
+type Limits = {
+  /** Sideways deviation allowed off the parent bone, in radians. */
+  splay: number;
+  curl: number;
+  hyper: number;
+  /**
+   * When set, the joint is a ball joint free to move anywhere inside this cone
+   * around its parent, instead of a hinge. The thumb needs it: closing a hand
+   * swings the thumb across the palm, which is opposition, not bending, and a
+   * hinge plane simply cannot express it — the thumb stays sticking out while
+   * the fingers close.
+   */
+  cone?: number;
+};
 
 const HINGE: Limits = { splay: 0.06, curl: 1.95, hyper: 0.1 };
 const KNUCKLE: Limits = { splay: 0.38, curl: 1.65, hyper: 0.22 };
 const TIP_JOINT: Limits = { splay: 0.06, curl: 1.5, hyper: 0.1 };
-const THUMB_BASE: Limits = { splay: 0.7, curl: 1.0, hyper: 0.55 };
-const THUMB_MID: Limits = { splay: 0.35, curl: 1.2, hyper: 0.25 };
-const THUMB_END: Limits = { splay: 0.12, curl: 1.4, hyper: 0.2 };
+const THUMB_BASE: Limits = { splay: 0.7, curl: 1.0, hyper: 0.55, cone: 1.25 };
+const THUMB_MID: Limits = { splay: 0.35, curl: 1.2, hyper: 0.25, cone: 1.45 };
+const THUMB_END: Limits = { splay: 0.12, curl: 1.4, hyper: 0.2, cone: 1.5 };
 
 type ChainLink = {
   bone: string;
@@ -100,15 +113,10 @@ for (const chain of CHAINS) {
   }
 }
 
-// Hand size measured across several axes, each divided by its nominal length in
-// palm spans. The largest estimate wins, so a palm turned edge-on to the camera
-// does not shrink the glove.
-const SPAN_PROBES: readonly (readonly [number, number, number])[] = [
-  [0, 9, 1],
-  [0, 5, 0.995],
-  [0, 17, 1.068],
-  [5, 17, 1.043],
-];
+// Hand size is locked while a hand is recognized. MediaPipe's image-space
+// span grows and shrinks with camera distance; following that made the glove
+// (and its grab reach) pulse. A fixed palm span keeps both steady.
+const LOCKED_SPAN = 0.85;
 
 // Relaxed open hand in palm spans, wrist at the origin, palm toward the camera.
 // Stands in for landmarks before any hand has been seen, and under the pointer
@@ -164,15 +172,10 @@ const GRAB_COLOR = new Color("#f0b429");
 
 const AXIS_Z = new Vector3(0, 0, 1);
 
-const DEFAULT_SPAN = 0.85;
-const MIN_SPAN = 0.35;
-const MAX_SPAN = 3;
-const FOLLOW_RATE = 32;
+const DEFAULT_SPAN = LOCKED_SPAN;
 const SPEED_FULL = 3.2;
 const REST_RATE = 2.6;
 const SHOWN_FLOOR = 0.02;
-/** Knuckle span across the palm, in palm spans. */
-const PALM_WIDTH = 1.043;
 
 /**
  * The handful of numbers that decide how the hand feels, gathered in one place
@@ -186,29 +189,40 @@ export const handTuning = {
   movingRate: 34,
   /** Depth is the noisiest axis tracking reports, so it is damped harder. */
   depthDamping: 0.45,
-  /** Below this fraction of an axis's true length the palm counts as face-on,
-   *  so noise cannot manufacture a rotation out of nothing. */
-  palmReach: 0.92,
-  /** Reported depth, relative to axis length, at which a lean counts as full.
-   *  Tracking compresses depth roughly fivefold, so this is small. */
-  depthLean: 0.12,
-  /** How fast the palm settles into a new orientation. */
-  turnRate: 9,
   /** The same dead zone for finger bones. Generous on purpose: the player's
    *  proportions never match the model's, and reading that as foreshortening
    *  would leave every finger permanently half curled. */
   fingerReach: 0.82,
-  /** Hand size rises fast to what is seen face-on and falls only slowly. */
-  spanDecay: 0.06,
   /** Arriving is quick, leaving gentler, so a dropped frame is not a flicker. */
   showRate: 14,
   hideRate: 5,
 };
+
+/**
+ * How the hand is presented, as opposed to how it moves. Both of these are
+ * answers that depend on how a player actually holds their hand in front of a
+ * camera, so they are switches to be settled by looking, not constants to be
+ * reasoned about.
+ */
+export const handView = {
+  /** Turn the hand over so the back faces the player. Reaching onto a table you
+   *  see the backs of your hands, so this is what reads as your own hand. */
+  faceDorsal: true,
+  /** Use the other model of the mirrored pair. */
+  swapHands: false,
+};
 // How far out of the palm plane the thumb must sit before the reading counts,
 // and how many agreeing frames settle it. Depth arrives heavily compressed, so
 // the bar is low — but the sign is what matters, and it holds steady.
-const CHIRALITY_FLOOR = 0.012;
-const CHIRALITY_FRAMES = 12;
+// How square the palm axes must be before the layout sign is trusted, and how
+// many frames must agree before swapping models. Near edge-on the two axes
+// close up and the sign means nothing.
+const LAYOUT_CONFIDENCE = 0.85;
+const LAYOUT_FRAMES = 6;
+/** Radians per second a single bone may turn. Real fingers close well inside
+ *  this; a solve that jumps does not. */
+const MAX_BONE_SLEW = 16;
+const SWAP_COOLDOWN = 0.6;
 const PAINT_RATE = 9;
 
 type BoneRig = {
@@ -221,6 +235,10 @@ type BoneRig = {
   limits: Limits | null;
   hinge: Vector3; // bend axis at rest
   curlSign: number; // which way around `hinge` folds toward the palm
+  /** Where this bone last pointed, to hold through unreadable frames and to
+   *  measure how far it is being asked to jump in one step. */
+  lastDir: Vector3;
+  settled: boolean;
 };
 
 type Rig = {
@@ -248,9 +266,9 @@ function createGloveState(handedness: Handedness) {
     }),
     rig: null as Rig | null,
     rigFor: null as Object3D | null,
-    chiralityLocked: false,
-    chiralityGuess: 0,
-    chiralityAgreed: 0,
+    layoutAgreed: 0,
+    swapCooldown: 0,
+    freshStart: true,
     v: new Vector3(),
     offset: new Vector3(),
     prevPos: new Vector3(),
@@ -276,9 +294,8 @@ function createGloveState(handedness: Handedness) {
     basis: new Matrix4(),
     inverse: new Matrix4(),
     prevWrist: new Vector3(),
+    palmWorld: new Vector3(),
     smoothed: new Quaternion(),
-    upDepth: 0,
-    acrossDepth: 0,
     span: DEFAULT_SPAN,
     presence: 0,
     grab: 0,
@@ -431,6 +448,8 @@ function buildRig(root: Object3D, material: MeshStandardMaterial): Rig | null {
       limits: item.limits,
       hinge,
       curlSign,
+      lastDir: (restDir ?? new Vector3(0, 1, 0)).clone(),
+      settled: false,
     };
   };
 
@@ -494,30 +513,6 @@ function trackedDirection(
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
-/**
- * How much depth a palm axis of known length must have, given the part of it
- * that lies across the image. Note the shape of it: the derivative blows up as
- * the depth approaches zero, which is exactly the common case of a palm facing
- * the camera. Measurement noise there would swing the answer wildly, so the
- * caller both leaves a dead zone (handTuning.palmReach) and eases toward this over time
- * rather than snapping to it.
- */
-function depthFor(x: number, y: number, length: number): number {
-  const reach = length * handTuning.palmReach;
-  const flat = Math.hypot(x, y);
-  return flat < reach ? Math.sqrt(reach * reach - flat * flat) : 0;
-}
-
-/**
- * How far, and which way, an axis leans out of the image, from -1 to 1. The
- * reported depth is far too compressed to use as a length, but it does say
- * which way and roughly how confidently — and at zero it says "square to the
- * camera", which is the answer a bare sign could never give.
- */
-function lean(z: number, length: number): number {
-  return clamp(z / (length * handTuning.depthLean), -1, 1);
-}
-
 // Fold `raw` into the cone of motion the joint actually has: at most `splay`
 // sideways off the parent bone, and a bend around `hinge` between `hyper`
 // backwards and `curl` toward the palm.
@@ -528,24 +523,41 @@ function constrainDirection(
   hinge: Vector3,
   curlSign: number,
   limits: Limits,
+  /** Where this bone pointed last frame, for cases with no angle to read. */
+  hold: Vector3,
   out: Vector3,
 ): Vector3 {
+  // A ball joint: anywhere inside a cone around the parent bone.
+  if (limits.cone !== undefined) {
+    const apart = Math.acos(clamp(raw.dot(parentDir), -1, 1));
+    if (apart <= limits.cone) return out.copy(raw);
+    glove.axis.crossVectors(parentDir, raw);
+    if (glove.axis.lengthSq() < 1e-8) return out.copy(parentDir);
+    glove.axis.normalize();
+    glove.twist.setFromAxisAngle(glove.axis, limits.cone);
+    return out.copy(parentDir).applyQuaternion(glove.twist);
+  }
+
   const splay = clamp(
     Math.asin(clamp(raw.dot(hinge), -1, 1)),
     -limits.splay,
     limits.splay,
   );
 
-  // Both directions flattened into the joint's bend plane.
+  // Both directions flattened into the joint's bend plane. When one of them
+  // lies along the hinge there is no angle to read, and the bone must simply
+  // hold the bend it already had: falling back to the parent direction here
+  // snapped the finger straight for a frame, which is what the flicker during
+  // fast movement was.
   glove.flatParent
     .copy(parentDir)
     .addScaledVector(hinge, -parentDir.dot(hinge));
-  if (glove.flatParent.lengthSq() < 1e-8) return out.copy(parentDir);
+  if (glove.flatParent.lengthSq() < 1e-8) return out.copy(hold);
   glove.flatParent.normalize();
 
   glove.flatTarget.copy(raw).addScaledVector(hinge, -raw.dot(hinge));
-  if (glove.flatTarget.lengthSq() < 1e-8) glove.flatTarget.copy(glove.flatParent);
-  else glove.flatTarget.normalize();
+  if (glove.flatTarget.lengthSq() < 1e-8) return out.copy(hold);
+  glove.flatTarget.normalize();
 
   const bend = Math.atan2(
     glove.axis.crossVectors(glove.flatParent, glove.flatTarget).dot(hinge),
@@ -585,15 +597,15 @@ export function GloveHand({
     [leftScene, rightScene],
   );
 
-  // Which of the two a hand needs is measured from its landmarks the first time
-  // it is seen clearly, not assumed. Until then either will do — a hand that
-  // has never been tracked is only showing a resting pose.
-  const [picked, setPicked] = useState(0);
-  const handModel = models[picked].clone;
+  // Start with the labelled side's asset; chirality lock below may swap once the
+  // mirrored landmark topology is clear (a mirror turns a right hand left).
+  const [picked, setPicked] = useState(handedness === "Right" ? 1 : 0);
+  const chosen = handView.swapHands ? 1 - picked : picked;
+  const handModel = models[chosen].clone;
 
   // The resting pose is a fixed set of numbers with a chirality of its own, so
   // it gets flipped to match whichever model ended up chosen.
-  const poseMirror = models[picked].chirality === REST_CHIRALITY ? 1 : -1;
+  const poseMirror = models[chosen].chirality === REST_CHIRALITY ? 1 : -1;
   // Which side of the table the hand waits on is a separate question, and the
   // one thing handedness still decides: the right hand belongs on the right.
   const restSide = handedness === "Right" ? 1 : -1;
@@ -607,8 +619,6 @@ export function GloveHand({
     const tracked = hand?.smoothedLandmarks.length === 21;
     const glove = (stateRef.current ??= createGloveState(handedness));
     const { target, current } = glove;
-    const follow =
-      1 - Math.exp(-(tracked || hand ? FOLLOW_RATE : REST_RATE) * dt);
     const paint = 1 - Math.exp(-PAINT_RATE * dt);
 
     if (tracked && hand) {
@@ -616,17 +626,16 @@ export function GloveHand({
         const world = landmarkToWorld(hand.smoothedLandmarks[i]);
         target[i].set(world.x, world.y, world.z);
       }
-      let measured = 0;
-      for (const [a, b, nominal] of SPAN_PROBES) {
-        measured = Math.max(measured, target[a].distanceTo(target[b]) / nominal);
+      // Lock visual size: rescale the landmark cloud around the wrist so bone
+      // aiming matches the fixed glove scale. Without this, close hands feed
+      // oversized targets into a small rig and the fingers contort.
+      glove.v.copy(target[0]);
+      const measured = Math.max(target[0].distanceTo(target[9]), 1e-5);
+      const fit = LOCKED_SPAN / measured;
+      for (let i = 0; i < 21; i++) {
+        target[i].sub(glove.v).multiplyScalar(fit).add(glove.v);
       }
-      measured = Math.min(MAX_SPAN, Math.max(MIN_SPAN, measured));
-      // Turning the hand shortens every projection at once, so a span that
-      // followed them down would shrink the hand and cancel out the depth
-      // rebuild below. It rises quickly to the size seen face-on and only
-      // drifts down slowly, which is the size the hand actually is.
-      const spanRate = measured > glove.span ? follow : follow * handTuning.spanDecay;
-      glove.span += (measured - glove.span) * spanRate;
+      glove.span = LOCKED_SPAN;
     } else if (hand) {
       // Pointer fallback: only a cursor, so the resting pose stands in for a
       // hand shape and is hung off the cursor.
@@ -658,9 +667,11 @@ export function GloveHand({
     const onStage = glove.shown > SHOWN_FLOOR;
     if (!onStage) {
       // Next time it appears it should simply be there, not fly in from
-      // wherever it was last seen.
+      // wherever it was last seen, and its fingers should arrive posed rather
+      // than creeping there under the slew limit.
       glove.seeded = false;
       glove.turned = false;
+      glove.freshStart = true;
     }
 
     // Tracking jitters most when the hand is holding still, and that is exactly
@@ -698,40 +709,6 @@ export function GloveHand({
     glove.material.emissiveIntensity = 0.24 * glove.grab;
     glove.cuffTint.copy(glove.accent).lerp(GRAB_COLOR, glove.grab);
 
-    // Settle which of the two models this hand needs from a run of frames that
-    // agree, then leave it alone. One reading is not enough — a hand turned
-    // edge-on barely shows which side its thumb is on — and re-reading forever
-    // would risk swapping the model in the middle of a gesture.
-    if (tracked && !glove.chiralityLocked) {
-      const reading = handednessVolume(
-        current[0],
-        current[5],
-        current[17],
-        current[9],
-        current[1],
-        glove.across,
-        glove.up,
-        glove.side,
-      );
-      const sign = Math.sign(reading);
-      if (Math.abs(reading) < CHIRALITY_FLOOR || sign === 0) {
-        glove.chiralityAgreed = 0;
-      } else if (sign === glove.chiralityGuess) {
-        glove.chiralityAgreed += 1;
-      } else {
-        glove.chiralityGuess = sign;
-        glove.chiralityAgreed = 1;
-      }
-
-      if (glove.chiralityAgreed >= CHIRALITY_FRAMES) {
-        glove.chiralityLocked = true;
-        const match = models.findIndex(
-          (entry) => entry.chirality === glove.chiralityGuess,
-        );
-        if (match >= 0 && match !== picked) setPicked(match);
-      }
-    }
-
     const model = modelRef.current;
     if (!model) return;
     // The rig holds direct references to this clone's bones. A remount hands
@@ -746,40 +723,22 @@ export function GloveHand({
     const rig = glove.rig;
     if (!rig) return;
 
-    // Palm frame of the tracked hand: up runs wrist → middle knuckle, normal
-    // comes out of the back of the hand.
-    //
-    // Both axes get their depth rebuilt first. Tracking flattens depth to a
-    // fifth of the scale it reports x and y on, so a hand turning about its own
-    // axis barely registers and the palm ends up permanently facing the camera.
-    // The span of each axis is known, so the missing depth is recoverable — the
-    // same trick the finger bones use, and what makes wrist twist and tilt read.
-    //
-    // The reported depth decides how far to lean, and the geometry decides how
-    // far that lean actually reaches. Taking only the sign of the report would
-    // be worse than useless: a palm square to the camera reports noise around
-    // zero, and committing to a sign there would twist the hand into a pose it
-    // is not in — which then folds the fingers the wrong way, since they close
-    // toward whichever side the palm ends up facing.
-    const turn = 1 - Math.exp(-handTuning.turnRate * dt);
-
+    // Palm frame from the image plane. Depth noise used to flip the glove
+    // between faces; flattening keeps yaw stable. Do NOT force a world-axis
+    // flip here — that mirrors side/up and turns a right hand into a left one
+    // while the finger IK still aims at unmirrored landmarks (contortion).
     glove.up.copy(current[9]).sub(current[0]);
-    glove.upDepth +=
-      (depthFor(glove.up.x, glove.up.y, glove.span) *
-        lean(glove.up.z, glove.span) -
-        glove.upDepth) *
-      turn;
-    glove.up.z = glove.upDepth;
-    glove.up.normalize();
+    glove.up.z = 0;
+    if (glove.up.lengthSq() < 1e-8) glove.up.set(0, 1, 0);
+    else glove.up.normalize();
 
-    const acrossSpan = glove.span * PALM_WIDTH;
     glove.across.copy(current[17]).sub(current[5]);
-    glove.acrossDepth +=
-      (depthFor(glove.across.x, glove.across.y, acrossSpan) *
-        lean(glove.across.z, acrossSpan) -
-        glove.acrossDepth) *
-      turn;
-    glove.across.z = glove.acrossDepth;
+    glove.across.z = 0;
+    if (glove.across.lengthSq() < 1e-8) {
+      glove.across.crossVectors(AXIS_Z, glove.up);
+      if (glove.across.lengthSq() < 1e-8) glove.across.set(1, 0, 0);
+    }
+    glove.across.normalize();
 
     glove.normal.crossVectors(glove.across, glove.up);
     if (glove.normal.lengthSq() < 1e-8) glove.normal.copy(AXIS_Z);
@@ -787,17 +746,64 @@ export function GloveHand({
     glove.side.crossVectors(glove.up, glove.normal).normalize();
     glove.basis.makeBasis(glove.side, glove.up, glove.normal);
 
+    // Choose which of the mirrored pair to wear, from the flattened layout
+    // alone. With depth dropped from the frame, `normal` is simply +Z or -Z:
+    // the sign says which way round the fingers run on screen, and that is all
+    // the information there is about which hand this looks like. A left palm
+    // and a right back draw the same silhouette, so the model and the face it
+    // shows are one choice, not two.
+    //
+    // A model's own `chirality` is the side of its normal its palm lies on, so
+    // aligning it puts the palm along `normal * chirality`. Wanting the palm
+    // pointing away from the camera fixes the choice: chirality = -normal.z.
+    //
+    // This deliberately uses no depth. Depth is the axis this whole file has
+    // stopped trusting, and it was the last thing still deciding the model.
+    const layout = Math.sign(glove.normal.z) || 1;
+    const wanted = handView.faceDorsal ? -layout : layout;
+    const confident =
+      Math.abs(glove.across.dot(glove.up)) < LAYOUT_CONFIDENCE;
+    glove.swapCooldown = Math.max(0, glove.swapCooldown - dt);
+    if (
+      tracked &&
+      confident &&
+      glove.swapCooldown === 0 &&
+      models[chosen].chirality !== wanted
+    ) {
+      glove.layoutAgreed += 1;
+      if (glove.layoutAgreed >= LAYOUT_FRAMES) {
+        glove.layoutAgreed = 0;
+        // Swapping rebuilds the rig, so hold off afterwards rather than let
+        // one swap chase the next while the hand is turning.
+        glove.swapCooldown = SWAP_COOLDOWN;
+        const match = models.findIndex((entry) => entry.chirality === wanted);
+        if (match >= 0) setPicked(handView.swapHands ? 1 - match : match);
+      }
+    } else {
+      glove.layoutAgreed = 0;
+    }
+
     // Place the whole model so its wrist lands on the tracked wrist, turned
-    // into the tracked palm frame and scaled to the tracked hand size. The
-    // orientation gets its own smoothing pass: a wobbling palm reads as a
-    // broken hand far more than a slightly late one does.
+    // into the tracked palm frame. Scale stays locked while the hand is present.
     model.visible = onStage;
     if (!onStage) {
       if (cuffRef.current) cuffRef.current.visible = false;
       return;
     }
-    const scale = (glove.span / rig.modelSpan) * glove.shown;
+    const scale = (LOCKED_SPAN / rig.modelSpan) * glove.shown;
     glove.quat.setFromRotationMatrix(glove.basis).multiply(rig.modelBasisInv);
+
+    // Present the requested face. Note this negates two axes, not one: that is
+    // a half turn about the hand's own up axis, so the fingers keep pointing
+    // the same way on screen and the chirality is untouched. Negating a single
+    // axis would mirror the hand instead, which is the contortion to avoid.
+    glove.palmWorld.copy(rig.palmDir).applyQuaternion(glove.quat);
+    if (glove.palmWorld.z > 0 === handView.faceDorsal) {
+      glove.normal.negate();
+      glove.side.negate();
+      glove.basis.makeBasis(glove.side, glove.up, glove.normal);
+      glove.quat.setFromRotationMatrix(glove.basis).multiply(rig.modelBasisInv);
+    }
     if (glove.turned) glove.smoothed.slerp(glove.quat, posFollow);
     else glove.smoothed.copy(glove.quat);
     glove.turned = true;
@@ -817,8 +823,7 @@ export function GloveHand({
       target[i].copy(current[i]).applyMatrix4(glove.inverse);
     }
 
-    // The camera axis is the one tracking is unreliable along, and the palm
-    // side of it is where fingers are allowed to fold.
+    // Fingers fold toward the palm side of the rig.
     glove.viewAxis.set(0, 0, 1).transformDirection(glove.inverse);
     const depthSign = Math.sign(glove.viewAxis.dot(rig.palmDir)) || 1;
 
@@ -858,8 +863,30 @@ export function GloveHand({
             glove.hinge,
             bone.curlSign,
             bone.limits,
+            bone.lastDir,
             glove.aimed,
           );
+
+          // Cap how far a bone may swing in a single step. A finger closing
+          // fast covers maybe half this; anything beyond it is not a hand
+          // moving but the solve jumping, which is what shows up as a finger
+          // snapping open for a frame during quick movement.
+          if (bone.settled && !glove.freshStart) {
+            const apart = Math.acos(
+              clamp(glove.aimed.dot(bone.lastDir), -1, 1),
+            );
+            const allowed = MAX_BONE_SLEW * dt;
+            if (apart > allowed) {
+              glove.axis.crossVectors(bone.lastDir, glove.aimed);
+              if (glove.axis.lengthSq() > 1e-10) {
+                glove.axis.normalize();
+                glove.twist.setFromAxisAngle(glove.axis, allowed);
+                glove.aimed.copy(bone.lastDir).applyQuaternion(glove.twist);
+              }
+            }
+          }
+          bone.lastDir.copy(glove.aimed);
+          bone.settled = true;
           glove.swing.setFromUnitVectors(bone.restDir, glove.aimed);
         } else {
           glove.swing.copy(glove.prevDelta);
@@ -874,6 +901,8 @@ export function GloveHand({
         }
       }
     }
+
+    glove.freshStart = false;
 
     const cuff = cuffRef.current;
     if (cuff) {

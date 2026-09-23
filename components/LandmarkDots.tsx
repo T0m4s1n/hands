@@ -37,6 +37,7 @@ function createScratch() {
  * The raw tracked landmarks, drawn straight from the data with no retargeting
  * in between. Laid over the posed model, this is what tells you whether a
  * disagreement comes from the tracking or from the way the model follows it.
+ * Sized to read clearly against the glove so the skeleton is the focus.
  */
 export function LandmarkDots({
   handsRef,
@@ -100,18 +101,20 @@ export function LandmarkDots({
         args={[undefined, undefined, DOTS]}
         visible={false}
         frustumCulled={false}
+        renderOrder={2}
       >
-        <sphereGeometry args={[0.055, 10, 8]} />
-        <meshBasicMaterial color="#4ade80" />
+        <sphereGeometry args={[0.08, 12, 10]} />
+        <meshBasicMaterial color="#4ade80" depthTest={false} />
       </instancedMesh>
       <instancedMesh
         ref={barsRef}
         args={[undefined, undefined, BARS]}
         visible={false}
         frustumCulled={false}
+        renderOrder={1}
       >
-        <cylinderGeometry args={[0.014, 0.014, 1, 6]} />
-        <meshBasicMaterial color="#22d3ee" />
+        <cylinderGeometry args={[0.022, 0.022, 1, 6]} />
+        <meshBasicMaterial color="#22d3ee" depthTest={false} />
       </instancedMesh>
     </>
   );

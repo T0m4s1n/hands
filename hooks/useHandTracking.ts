@@ -14,6 +14,12 @@ export type TrackedHand = {
   cursor: Vec3;
   pinchDistance: number;
   isGrabbing: boolean;
+  /**
+   * How far the wrist is rolled, in radians, when the input can say so
+   * directly. Camera tracking cannot — it has to be read off the landmarks —
+   * so this is left unset there and only the pointer fallback fills it in.
+   */
+  roll?: number;
 };
 
 export type TrackingStatus =
@@ -42,7 +48,22 @@ const MODEL_URL =
 const MEDIAPIPE_MODULE_URL =
   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs";
 
-const SMOOTHING = 0.4;
+/**
+ * How hard the landmarks are smoothed, and the rule that decides.
+ *
+ * A fixed blend per frame is the wrong tool twice over. It smooths a hand that
+ * is racing across the frame exactly as hard as one resting on the counter, so
+ * fast movement arrives late — the lag people actually feel — while slow
+ * movement still shimmers. And because it is per frame rather than per second,
+ * the same setting behaves differently at thirty and at a hundred and twenty.
+ *
+ * So: smooth hard when the hand is still, barely at all when it is moving, and
+ * scale by how long the frame took.
+ */
+const STILL_RATE = 14;
+const MOVING_RATE = 90;
+/** How far a landmark travels in a frame before it counts as moving. */
+const MOVING_SPAN = 0.045;
 const MAX_HANDS = 2;
 const DROP_AFTER_MISSED_FRAMES = 8;
 const HUD_INTERVAL_MS = 80;
@@ -63,6 +84,17 @@ export function setFrameShape(width: number, height: number) {
 
 
 const WORLD_Z = 1.4;
+/**
+ * The height the hands ride above the counter.
+ *
+ * Fixed, on purpose. This used to be driven by how near the camera the hand
+ * looked, against a range the session learned as it went — which meant the
+ * hands, and everything they were holding, slowly breathed up and down with
+ * nothing but tracking noise behind it. A camera pointed at a person cannot
+ * measure distance; it can only measure how big they look, and inferring one
+ * from the other needs a scale nobody supplies. Two steady axes the player
+ * controls beat three where the third argues with them.
+ */
 const HAND_HOVER = 0.95;
 /** How far a wrist may travel between frames and still be the same hand. */
 const MATCH_RADIUS = 0.22;
@@ -154,19 +186,58 @@ function lerpVec(a: Vec3, b: Vec3, t: number): Vec3 {
   };
 }
 
-function smoothLandmarks(prev: Vec3[] | undefined, next: Vec3[]): Vec3[] {
+function smoothLandmarks(
+  prev: Vec3[] | undefined,
+  next: Vec3[],
+  dt: number,
+): Vec3[] {
   if (!prev || prev.length !== next.length) return next;
-  return next.map((point, i) => lerpVec(prev[i], point, SMOOTHING));
+
+  // One speed for the whole hand, measured at the wrist: smoothing the fingers
+  // at different rates from the palm pulls the hand apart when it moves.
+  const travelled = Math.hypot(next[0].x - prev[0].x, next[0].y - prev[0].y);
+  const moving = Math.min(1, travelled / MOVING_SPAN);
+  const rate = STILL_RATE + (MOVING_RATE - STILL_RATE) * moving;
+  // Frame-rate independent: the same rate settles in the same wall-clock time
+  // whatever the frame took.
+  const t = 1 - Math.exp(-rate * Math.min(dt, 0.1));
+
+  return next.map((point, i) => lerpVec(prev[i], point, t));
 }
 
 export function landmarkToWorld(lm: Vec3): Vec3 {
   return {
-    // No flip here: the frame was already mirrored before detection.
+    // No flip here: the frame was already mirrored before detection. Confirmed
+    // against the raw landmark overlay, which lands on the correct side.
     x: (lm.x - 0.5) * WORLD_X,
     y: (0.5 - lm.y) * worldY,
-    // Hands hover in front of the table plane, never inside it.
+    // The tracker's per-landmark depth is kept, but only for the shape of the
+    // fingers — a curled finger really does sit nearer than a straight one,
+    // and that is all this reading is steady enough to be trusted with. It
+    // never decides how high the hand itself is.
     z: HAND_HOVER + Math.max(-0.7, Math.min(0.7, -lm.z * WORLD_Z)),
   };
+}
+
+/**
+ * World-space points used to test whether a hand can reach an object. Palm
+ * centre is the main contact; tips catch grabs that land on the fingers.
+ * Recognition is unchanged — this is only the interaction probe.
+ */
+export function handGrabPoints(landmarks: Vec3[]): Vec3[] {
+  if (landmarks.length < 21) return [];
+  const wrist = landmarks[0];
+  const indexMcp = landmarks[5];
+  const middleMcp = landmarks[9];
+  const pinkyMcp = landmarks[17];
+  const palm = {
+    x: (wrist.x + middleMcp.x) * 0.5,
+    y: (wrist.y + middleMcp.y) * 0.5,
+    z: (wrist.z + middleMcp.z) * 0.5,
+  };
+  return [palm, wrist, indexMcp, middleMcp, pinkyMcp, landmarks[4], landmarks[8]].map(
+    landmarkToWorld,
+  );
 }
 
 function pinchMetrics(landmarks: Vec3[]): { pinchDistance: number; cursor: Vec3 } {
@@ -176,12 +247,14 @@ function pinchMetrics(landmarks: Vec3[]): { pinchDistance: number; cursor: Vec3 
   const middleMcp = landmarks[9];
   const handSize = Math.max(dist(wrist, middleMcp), 1e-4);
   const pinchDistance = dist(thumbTip, indexTip) / handSize;
-  const pinchMid = {
-    x: (thumbTip.x + indexTip.x) * 0.5,
-    y: (thumbTip.y + indexTip.y) * 0.5,
-    z: (thumbTip.z + indexTip.z) * 0.5,
+  // Carry/collide from the palm, not the pinch midpoint: tips jitter more and
+  // drift off the visual glove once hand size is locked.
+  const palm = {
+    x: (wrist.x + middleMcp.x) * 0.5,
+    y: (wrist.y + middleMcp.y) * 0.5,
+    z: (wrist.z + middleMcp.z) * 0.5,
   };
-  return { pinchDistance, cursor: landmarkToWorld(pinchMid) };
+  return { pinchDistance, cursor: landmarkToWorld(palm) };
 }
 
 function applyHysteresis(
@@ -332,8 +405,14 @@ export function useHandTracking() {
       setStatus("ready");
 
       let lastHud = 0;
+      // Real elapsed time between detections, so the smoother settles in the
+      // same wall-clock time whatever the frame rate happens to be.
+      let lastTick = performance.now();
 
       const tick = () => {
+        const tickNow = performance.now();
+        const dt = Math.min(0.1, (tickNow - lastTick) / 1000);
+        lastTick = tickNow;
         if (!runningRef.current) return;
         const landmarker = landmarkerRef.current;
         const currentVideo = videoRef.current;
@@ -392,7 +471,7 @@ export function useHandTracking() {
 
             const raw = detection.raw;
             const prev = persistRef.current.get(handedness);
-            const smoothed = smoothLandmarks(prev?.smoothed, raw);
+            const smoothed = smoothLandmarks(prev?.smoothed, raw, dt);
             const { pinchDistance, cursor } = pinchMetrics(smoothed);
             const isGrabbing = applyHysteresis(
               prev?.isGrabbing ?? false,
@@ -481,7 +560,14 @@ export function useHandTracking() {
     setError(null);
     setStatus("ready");
 
-    const sync = (event: PointerEvent) => {
+    // A mouse has no wrist, so the roll a pour needs has to come from
+    // somewhere else: the wheel. Without it the fallback could not tip a jug,
+    // which left two of the three recipes impossible to finish without a
+    // camera.
+    let roll = 0;
+    let last: PointerEvent | null = null;
+
+    const publish = (event: PointerEvent) => {
       const grabbing = event.buttons === 1;
       handsRef.current = [
         {
@@ -491,23 +577,40 @@ export function useHandTracking() {
           cursor: {
             x: (event.clientX / window.innerWidth - 0.5) * 7,
             y: -(event.clientY / window.innerHeight - 0.5) * worldY,
-            // Same height tracked hands get, so the glove hovers above the
-            // props instead of sinking behind them.
+            // The same steady height a tracked hand gets. The wheel used to
+            // raise and lower it; nothing does now, because the game works
+            // out that height for itself.
             z: HAND_HOVER,
           },
           pinchDistance: grabbing ? 0.12 : 0.8,
           isGrabbing: grabbing,
+          roll,
         },
       ];
+    };
+
+    const sync = (event: PointerEvent) => {
+      last = event;
+      publish(event);
+    };
+
+    const wheel = (event: WheelEvent) => {
+      if (!last) return;
+      event.preventDefault();
+      // A couple of notches is a full tip, which is about how far a wrist goes.
+      roll = Math.max(-1.6, Math.min(1.6, roll + event.deltaY * 0.004));
+      publish(last);
     };
 
     window.addEventListener("pointermove", sync);
     window.addEventListener("pointerdown", sync);
     window.addEventListener("pointerup", sync);
+    window.addEventListener("wheel", wheel, { passive: false });
     pointerCleanupRef.current = () => {
       window.removeEventListener("pointermove", sync);
       window.removeEventListener("pointerdown", sync);
       window.removeEventListener("pointerup", sync);
+      window.removeEventListener("wheel", wheel);
     };
   }, [stop]);
 

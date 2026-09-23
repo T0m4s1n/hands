@@ -2,7 +2,6 @@
 
 import { Suspense, type RefObject } from "react";
 import { Canvas } from "@react-three/fiber";
-import { PCFSoftShadowMap } from "three";
 import { HandGloves } from "@/components/GloveHand";
 import { LandmarkDots } from "@/components/LandmarkDots";
 import type { TrackedHand } from "@/hooks/useHandTracking";
@@ -48,13 +47,10 @@ export function HandLabScene({
 }) {
   return (
     <Canvas
-      shadows
+      shadows="percentage"
       dpr={[1, 1.75]}
-      camera={{ position: [0, 0, 7.6], fov: 46 }}
+      camera={{ position: [0, 0, 6.2], fov: 42 }}
       gl={{ antialias: true, alpha: false }}
-      onCreated={({ gl }) => {
-        gl.shadowMap.type = PCFSoftShadowMap;
-      }}
     >
       <Stage />
       <Suspense fallback={null}>
