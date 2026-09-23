@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui";
 
 type EnableCameraButtonProps = {
   onStream: (stream: MediaStream) => void;
@@ -148,30 +149,33 @@ export function EnableCameraButton({
   }, [fail]);
 
   return (
-    <div className="mt-5 space-y-3">
-      <button
+    <div className="mt-6 space-y-3">
+      {/* One filled button: the single thing this screen exists to do. */}
+      <Button
         ref={buttonRef}
-        type="button"
         disabled={waiting}
-        className="rounded-full bg-amber-400 px-5 py-2.5 text-sm font-semibold text-stone-950 hover:bg-amber-300 disabled:cursor-wait disabled:opacity-80"
+        className="w-full"
+        aria-busy={waiting}
       >
         {waiting ? "Esperando permiso…" : "Activar cámara"}
-      </button>
-      <button
-        type="button"
-        onClick={onPointerFallback}
-        className="block w-full text-sm text-stone-300 underline-offset-2 hover:underline"
-      >
+      </Button>
+      <Button variant="plain" className="w-full" onClick={onPointerFallback}>
         Continuar con el ratón
-      </button>
+      </Button>
+      <p className="t-caption text-label-3">
+        Con ratón: mantén pulsado para tomar y usa la rueda para inclinar y
+        verter.
+      </p>
       {error && (
-        <p className="text-left text-sm leading-6 text-amber-200">{error}</p>
+        <p className="t-subhead rounded-tile bg-fill p-3 text-left text-label-2">
+          {error}
+        </p>
       )}
-      <details className="text-left text-stone-500">
-        <summary className="cursor-pointer text-xs font-medium text-stone-400 hover:text-stone-300">
+      <details>
+        <summary className="t-footnote cursor-pointer list-none text-label-3 transition hover:text-label-2">
           Diagnóstico
         </summary>
-        <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-black/30 p-2 font-mono text-[11px] leading-5 text-stone-500">
+        <pre className="t-caption mt-2 whitespace-pre-wrap rounded-tile bg-black/30 p-3 font-mono leading-5 text-label-3">
           {diagnostics}
         </pre>
       </details>
