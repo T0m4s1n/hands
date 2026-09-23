@@ -1,22 +1,84 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/*
+ * A small design system, built the way Apple builds one: a label hierarchy
+ * instead of ad-hoc greys, translucent materials instead of flat panels, one
+ * tint colour, and a type scale with real names. Everything on screen sits on
+ * top of a live 3D table, so the interface defers to it — it is glass over the
+ * scene, never a wall in front of it.
+ */
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@theme {
+  --font-sans:
+    var(--font-roboto), -apple-system, BlinkMacSystemFont, "Segoe UI",
+    system-ui, sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, var(--font-geist-mono),
+    monospace;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /*
+   * The colours of La Mejor Taza, Nariño: a deep wine red carrying almost
+   * everything, warm cream for anything that has to be read at length, amber
+   * for the one thing you are meant to press, and roasted brown underneath it
+   * all. Taken from the site itself rather than guessed at.
+   */
+  --color-wine: #8f1824;
+  --color-wine-deep: #5c0f18;
+  --color-cream: #f0e8d9;
+  --color-amber: #f5990a;
+  --color-cocoa: #522a1d;
+  /*
+   * The green half of the brand. La Mejor Taza alternates whole sections
+   * between the wine and this, so it is a surface colour in its own right and
+   * not just the colour of the leaves.
+   */
+  --color-forest: #12664a;
+  --color-forest-deep: #0b4a34;
+
+  /*
+   * The road from the wine to the green.
+   *
+   * Each section owns one of these outright. What keeps the change between
+   * them from reading as a hard edge is not blending the colours into each
+   * other — it is that every field grows a curved lip up into the one above
+   * it, so the join is a shape rather than a line, and that they are ordered
+   * to dip through the dark in the middle. Red and green have nothing between
+   * them but mud, so they are never asked to meet in the light.
+   */
+  --field-wine: #8f1824;
+  --field-roast: #2b1014;
+  --field-forest: #0f5c42;
+  --field-deep: #093b2b;
+  /* The plant itself, for the botanical border. */
+  --color-leaf: #1f7a3d;
+  --color-cherry: #d8232a;
+
+  /*
+   * Text, in descending prominence. White for anything that carries the page —
+   * the brand sets its headlines in plain white on the wine and they are the
+   * loudest thing on it — with cream kept for surfaces rather than for type.
+   */
+  --color-label: rgb(255 255 255 / 0.98);
+  --color-label-2: rgb(255 250 244 / 0.76);
+  --color-label-3: rgb(255 250 244 / 0.52);
+  --color-label-4: rgb(255 250 244 / 0.3);
+
+  /* Hairlines and the soft fills that stand in for buttons and tracks. */
+  --color-separator: rgb(240 232 217 / 0.16);
+  --color-fill: rgb(240 232 217 / 0.09);
+  --color-fill-2: rgb(240 232 217 / 0.16);
+  --color-fill-3: rgb(240 232 217 / 0.24);
+
+  /* The single tint colour. Everything interactive is this, nothing else is. */
+  --color-tint: #f5990a;
+  --color-tint-ink: #3d1206;
+  --color-canvas: #2b070c;
+
+  --radius-card: 1.25rem;
+  --radius-sheet: 1.75rem;
+  --radius-tile: 0.875rem;
+
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 html,
@@ -25,8 +87,253 @@ body {
 }
 
 body {
-  background: #070b14;
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
-  overflow: hidden;
+  background: var(--color-canvas);
+  color: var(--color-label);
+  font-family: var(--font-sans);
+  /* Apple's optical sizing on large text depends on these being on. */
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/*
+ * What stops a field being a flat rectangle.
+ *
+ * Everything here animates only transform and opacity, which the compositor
+ * can do without touching layout or paint, and all of it stops dead for
+ * anyone who has asked their system for less movement.
+ */
+@keyframes field-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.14);
+    opacity: 1;
+  }
+}
+
+/* A mote drifts from wherever it was placed to a nearby offset and back. */
+@keyframes mote-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(var(--dx, 14px), var(--dy, -20px), 0)
+      rotate(var(--dr, 18deg));
+  }
+}
+
+/* A branch has weight; it leans rather than bobbing. */
+@keyframes sway {
+  0%,
+  100% {
+    transform: rotate(-1.4deg);
+  }
+  50% {
+    transform: rotate(1.4deg);
+  }
+}
+
+/* The bird holds station the way a hummingbird does: small, quick, never still. */
+@keyframes hover-bird {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-2.5deg);
+  }
+  50% {
+    transform: translate3d(-8px, -15px, 0) rotate(2.5deg);
+  }
+}
+
+/* Steam leans and thins as it goes, rather than sliding straight up. */
+@keyframes steam-rise {
+  0%,
+  100% {
+    transform: translateY(0) scaleY(1) skewX(0deg);
+    opacity: 0.35;
+  }
+  50% {
+    transform: translateY(-5px) scaleY(1.14) skewX(7deg);
+    opacity: 0.85;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [style*="animation"],
+  .grain::after {
+    animation: none !important;
+  }
+}
+
+@layer components {
+  /*
+   * Film grain over a field, so a large area of one colour has something in
+   * it. Flat colour at this size reads as an unpainted wall; a little noise
+   * reads as paper. Generated rather than fetched — it is one filter, and an
+   * image would be a request for something nobody is meant to notice.
+   */
+  .grain {
+    position: relative;
+  }
+  .grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.18;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /*
+   * Materials. Blur plus saturation is what makes glass read as glass rather
+   * than as a grey box: the colour of whatever is behind it bleeds through and
+   * stays vivid, so the panel feels like a layer of the same world.
+   */
+  .material {
+    background: rgb(64 11 18 / 0.74);
+    backdrop-filter: blur(32px) saturate(180%);
+    -webkit-backdrop-filter: blur(32px) saturate(180%);
+    border: 1px solid var(--color-separator);
+    box-shadow:
+      0 1px 0 0 rgb(240 232 217 / 0.07) inset,
+      0 20px 60px -20px rgb(20 2 5 / 0.8);
+  }
+
+  .material-thin {
+    background: rgb(74 13 21 / 0.52);
+    backdrop-filter: blur(24px) saturate(170%);
+    -webkit-backdrop-filter: blur(24px) saturate(170%);
+    border: 1px solid var(--color-separator);
+  }
+
+  /* For panels that carry a lot of text over a bright, busy scene. */
+  .material-thick {
+    background: rgb(46 8 14 / 0.93);
+    backdrop-filter: blur(32px) saturate(160%);
+    -webkit-backdrop-filter: blur(32px) saturate(160%);
+    border: 1px solid var(--color-separator);
+    box-shadow:
+      0 1px 0 0 rgb(240 232 217 / 0.07) inset,
+      0 20px 60px -20px rgb(20 2 5 / 0.8);
+  }
+
+  /* The dimmed layer a sheet sits on, so the scene stays legible underneath. */
+  .scrim {
+    background: rgb(26 4 8 / 0.62);
+    backdrop-filter: blur(26px) saturate(140%);
+    -webkit-backdrop-filter: blur(26px) saturate(140%);
+  }
+
+  /*
+   * Continuous corners. A plain border-radius is a circular arc that meets the
+   * straight edge with a visible kink; a squircle blends into it. Only some
+   * browsers can draw one, and the rounded fallback is perfectly fine.
+   */
+  @supports (corner-shape: squircle) {
+    .squircle {
+      corner-shape: squircle;
+    }
+  }
+
+  /* The type scale, named after what each size is for rather than its pixels. */
+  .t-large-title {
+    font-size: 2.125rem;
+    line-height: 1.12;
+    font-weight: 700;
+    letter-spacing: -0.022em;
+  }
+  .t-title {
+    font-size: 1.5rem;
+    line-height: 1.2;
+    font-weight: 650;
+    letter-spacing: -0.019em;
+  }
+  .t-headline {
+    font-size: 1.0625rem;
+    line-height: 1.3;
+    font-weight: 600;
+    letter-spacing: -0.012em;
+  }
+  .t-body {
+    font-size: 1.0625rem;
+    line-height: 1.45;
+    letter-spacing: -0.011em;
+  }
+  .t-subhead {
+    font-size: 0.9375rem;
+    line-height: 1.4;
+    letter-spacing: -0.006em;
+  }
+  .t-footnote {
+    font-size: 0.8125rem;
+    line-height: 1.35;
+  }
+  .t-caption {
+    font-size: 0.75rem;
+    line-height: 1.3;
+  }
+}
+
+@layer components {
+  /*
+   * The amber pill the brand puts its dates and labels in. Dark type on amber
+   * rather than the other way round, which is how they set it.
+   */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    background: var(--color-tint);
+    color: var(--color-tint-ink);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    transition:
+      transform 220ms var(--ease-sheet),
+      filter 220ms var(--ease-sheet),
+      box-shadow 220ms var(--ease-sheet);
+  }
+  .pill-quiet {
+    background: color-mix(in srgb, var(--color-tint) 18%, transparent);
+    color: var(--color-tint);
+    font-weight: 600;
+  }
+}
+
+/* One focus ring everywhere, and it only shows for keyboard users. */
+:where(button, a, input, summary):focus-visible {
+  outline: 2px solid var(--color-tint);
+  outline-offset: 3px;
+  border-radius: 0.5rem;
+}
+
+/* Range inputs are the one native control kept, so they get the tint. */
+input[type="range"] {
+  accent-color: var(--color-tint);
+}
+
+/* Steam leans and thins as it goes, rather than sliding straight up. */
+@keyframes steam-rise {
+  0%,
+  100% {
+    transform: translateY(0) scaleY(1) skewX(0deg);
+    opacity: 0.35;
+  }
+  50% {
+    transform: translateY(-5px) scaleY(1.14) skewX(7deg);
+    opacity: 0.85;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
