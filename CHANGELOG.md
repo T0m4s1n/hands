@@ -13,6 +13,25 @@ sirve de nada dentro de seis meses.
 
 ### Las manos responden y giran
 
+- **Recuperada la profundidad por hueso.** `trackedDirection` reconstruía la
+  profundidad de cada hueso con un triángulo rectángulo y le aplicaba **un signo
+  calculado una sola vez para toda la mano** — el de «doblar hacia la palma».
+  Los quince huesos recibían el mismo. Una mano sostenida en ángulo, con los
+  dedos genuinamente a profundidades distintas y el tracker reportándolas bien,
+  **no se podía expresar**: todos colapsaban sobre el mismo eje y el modelo se
+  quedaba casi plano mientras los puntos de seguimiento al lado mostraban otra
+  cosa. Ahora el signo sale de la medida por hueso, con el valor global sólo
+  como respaldo bajo una zona muerta del 12 % de la longitud del hueso.
+- **Añadido `hooks/boneAim.ts`** con siete pruebas. La magnitud de la Z de
+  MediaPipe sigue sin creerse — viene a un quinto de escala y con ruido — pero
+  el signo es la parte que sobrevive a eso, y era la que faltaba.
+- **Arreglada la superposición de depuración.** Los puntos de `/manos` se
+  dibujaban al tamaño aparente de la cámara sobre un guante de tamaño fijo, así
+  que los dos nunca cuadraban y **cualquier desacuerdo parecía enorme hubiera o
+  no algo roto** — justo en la vista cuyo comentario decía servir para
+  distinguir un fallo de seguimiento de uno de modelo. Ahora comparten el mismo
+  reescalado, que vive en un sitio único.
+
 - **Quitado el suavizado doble.** El guante volvía a filtrar en espacio de mundo
   lo que el tracker ya había filtrado, y a menos de la mitad de velocidad
   (`stillRate 7` / `movingRate 34` contra `14` / `90`). **Dos filtros

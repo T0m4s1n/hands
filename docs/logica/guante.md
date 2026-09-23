@@ -156,19 +156,47 @@ deliberadamente torcidos: desviación máxima 1e-9.
 
 ## La reconstrucción de profundidad
 
-`trackedDirection` (`:481-511`) es el corazón del archivo y **no se fía de la Z
-de MediaPipe**. Separa la componente perpendicular al eje de visión (fiable) y
-**recalcula** la profundidad como el cateto que falta de un triángulo rectángulo
-contra `restLength * fingerReach (0.82)`:
+`hooks/boneAim.ts`, con sus pruebas en `boneAim.test.ts`.
+
+La **magnitud** de la Z de MediaPipe no se cree: viene a un quinto de la escala
+de los otros ejes y con mucho más ruido, así que un dedo curvándose hacia la
+cámara colapsa en un vector casi nulo que es sobre todo ruido — que es
+exactamente por qué cerrar el puño se deshacía. La parte lateral del hueso sí es
+fiable, y su longitud se conoce, así que la profundidad que falta es el cateto
+restante de un triángulo rectángulo contra `restLength * fingerReach (0.82)`:
 
 ```
 depth = sideways < reach ? sqrt(reach² − sideways²) : 0
 ```
 
-con el signo de `depthSign`. El porqué: "a finger curling toward the camera
-collapses into a near-zero vector that is mostly noise — which is exactly why
-closing a fist fell apart… Of the two possible signs, take the one folding toward
-the palm: the only way a finger actually bends."
+### El signo sí se cree, y ése era el fallo
+
+De las dos direcciones que ese triángulo permite, el código viejo tomaba
+**siempre** la que dobla hacia la palma, y la tomaba de un único valor calculado
+una vez para toda la mano. **Los quince huesos recibían el mismo signo.**
+
+Una mano sostenida en ángulo —con los dedos genuinamente a profundidades
+distintas, y el tracker reportándolas bien— no se podía expresar en absoluto:
+todos los dedos colapsaban sobre el mismo eje y el modelo se quedaba casi plano
+mientras los puntos de seguimiento al lado mostraban otra cosa.
+
+Ahora el signo sale de la medida **por hueso**. El valor global queda sólo como
+respaldo, para huesos cuya profundidad medida es demasiado pequeña para leerle
+un signo.
+
+```
+DEPTH_DEADZONE = 0.12    // como fracción de la longitud del hueso
+```
+
+La zona muerta escala con la longitud del hueso y no es absoluta: la misma
+profundidad en unidades es señal en una falange corta y ruido en un metacarpo.
+
+### Lo que sigue sin creerse
+
+Dos huesos con la **misma** extensión lateral están al mismo ángulo respecto al
+eje de visión, por mucho que difieran sus profundidades reportadas. Esa
+diferencia vive entera en el canal a un quinto de escala. La geometría fija el
+ángulo; lo único libre es el lado, y el lado es lo que se recuperó.
 
 `fingerReach` es generoso a propósito: "the player's proportions never match the
 model's, and reading that as foreshortening would leave every finger permanently

@@ -101,3 +101,33 @@ export function layoutSign(frame: Frame): number {
 export function layoutSkew(frame: Frame): number {
   return Math.abs(frame.across.dot(frame.up));
 }
+
+/**
+ * The visual size the glove is locked to, in world units.
+ *
+ * Apparent hand size grows and shrinks with distance to the camera, and
+ * following it made the glove — and the reach the game tests against — pulse
+ * in and out. Anything that wants to be compared against the posed glove has
+ * to be measured in the same units, which is what `lockSpan` is for.
+ */
+export const LOCKED_SPAN = 0.85;
+
+/**
+ * Rescales a landmark cloud about its wrist so the wrist-to-middle-knuckle
+ * span is `LOCKED_SPAN`, in place.
+ *
+ * The debug overlay needs this as much as the glove does. Drawn at their own
+ * apparent size over a glove drawn at a fixed one, the landmarks sit wherever
+ * the player happens to be sitting and every disagreement looks enormous — so
+ * the one view meant to tell you whether a problem is in the tracking or in
+ * the model could not tell you either.
+ */
+export function lockSpan(points: Vector3[], scratch: Vector3): void {
+  if (points.length < 10) return;
+  scratch.copy(points[0]);
+  const measured = Math.max(points[0].distanceTo(points[9]), 1e-5);
+  const fit = LOCKED_SPAN / measured;
+  for (const point of points) {
+    point.sub(scratch).multiplyScalar(fit).add(scratch);
+  }
+}

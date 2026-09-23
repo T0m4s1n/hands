@@ -27,7 +27,7 @@ Lo que **no** está cubierto: el bucle de render, el rig del guante, la carga de
 modelos, el post-proceso y toda la interfaz. Eso se verifica a mano en el
 navegador y en `/manos` y `/modelos`.
 
-## Los siete archivos
+## Los ocho archivos
 
 | Archivo | Cubre |
 | --- | --- |
@@ -38,13 +38,14 @@ navegador y en `/manos` y `/modelos`.
 | `components/coffee/slosh.test.ts` | La onda de la superficie |
 | `components/coffee/solid.test.ts` | La altura de transporte |
 | `hooks/palmFrame.test.ts` | Hacia dónde mira la mano |
+| `hooks/boneAim.test.ts` | Hacia dónde apunta cada hueso |
 
-Cuatro de los siete son bloques de aserciones a nivel superior; `solid.test.ts`
-y `palmFrame.test.ts` usan `test()` de `node:test`.
+Cuatro de los ocho son bloques de aserciones a nivel superior; `solid.test.ts`,
+`palmFrame.test.ts` y `boneAim.test.ts` usan `test()` de `node:test`.
 
 ## Las pruebas que valen más
 
-Cuatro, y las cuatro nacieron de un fallo real:
+Cinco, y las cinco nacieron de un fallo real:
 
 1. **`anim.test.ts`** — un solo fotograma de un segundo deja el muelle finito.
    Una pestaña que vuelve de segundo plano entrega justo eso.
@@ -57,6 +58,15 @@ Cuatro, y las cuatro nacieron de un fallo real:
    una mano girada dan una marca **idéntica** a la de una mano plana. No
    atenuada: idéntica, a cero grados. Las dos primeras pruebas dejan ese fallo
    escrito para que no pueda volver sin que algo falle.
+5. **`boneAim.test.ts`** — dos huesos inclinados en sentidos opuestos de
+   profundidad tienen que apuntar en sentidos opuestos. Antes recibían el mismo
+   signo, calculado una vez para toda la mano, y por eso una mano en ángulo se
+   aplastaba con todos los dedos juntos.
+
+Una nota sobre escribirlas: al redactar `boneAim.test.ts` la primera versión
+falló, y **era la prueba la que estaba mal**, no el código. Esperaba que la
+profundidad conservara su magnitud, y el diseño sólo conserva el signo a
+propósito. Merece decirse: una prueba que falla no siempre acusa al código.
 
 Además `gestures.test.ts` caso 11 es un contrato estructural sobre las recetas:
 si alguien añade una etapa cuya banda no contiene su propio objetivo, o una

@@ -92,6 +92,12 @@ de vídeo y necesita contraste:
 | Landmarks del pellizco (4 y 8) | `#facc15`, radio 6 |
 | El resto de landmarks | `#f8fafc`, radio 3.5 |
 
+Los puntos verdes de `/manos` (`components/LandmarkDots.tsx`) se dibujan **al
+tamaño fijo del guante**, no al tamaño aparente con que los reporta la cámara.
+Sin ese reescalado la superposición no puede hacer su trabajo: una mano cerca de
+la cámara produce una nube mucho mayor que el guante de tamaño fijo, los dos
+nunca cuadran, y **cualquier desacuerdo parece enorme haya o no algo roto**.
+
 **Cuando está oculto el vídeo sigue montado** en un contenedor de 1×1 píxel con
 `opacity-0` (`:102-110`): "The video element must stay mounted and playing (the
 tracking hook reads frames from it), so it's kept off-screen rather than

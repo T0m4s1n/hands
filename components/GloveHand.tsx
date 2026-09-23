@@ -18,11 +18,14 @@ import {
   type TrackedHand,
 } from "@/hooks/useHandTracking";
 import {
+  LOCKED_SPAN,
   layoutSign,
   layoutSkew,
+  lockSpan,
   makeFrame,
   palmFrame,
 } from "@/hooks/palmFrame";
+import { boneAim, makeAimScratch } from "@/hooks/boneAim";
 
 // Rigged hand meshes from @webxr-input-profiles/assets (MIT), the same models
 // three.js uses for WebXR hand tracking. Both are loaded because which one a
@@ -122,7 +125,6 @@ for (const chain of CHAINS) {
 // Hand size is locked while a hand is recognized. MediaPipe's image-space
 // span grows and shrinks with camera distance; following that made the glove
 // (and its grab reach) pulse. A fixed palm span keeps both steady.
-const LOCKED_SPAN = 0.85;
 
 // Relaxed open hand in palm spans, wrist at the origin, palm toward the camera.
 // Stands in for landmarks before any hand has been seen, and under the pointer
@@ -323,6 +325,7 @@ function createGloveState(handedness: Handedness) {
     // choose which of the mirrored pair to wear. See hooks/palmFrame.ts.
     frame: makeFrame(),
     flat: makeFrame(),
+    aimScratch: makeAimScratch(),
     dir: new Vector3(),
     quat: new Quaternion(),
     swing: new Quaternion(),
@@ -516,12 +519,9 @@ function buildRig(root: Object3D, material: MeshStandardMaterial): Rig | null {
 }
 
 // MediaPipe reports depth on a much smaller scale than it reports x and y, so a
-// finger curling toward the camera collapses into a near-zero vector that is
-// mostly noise — which is exactly why closing a fist fell apart. The sideways
-// part of the bone is trustworthy though, and the bone's length is known, so
-// the missing depth is just the remaining side of a right triangle. Of the two
-// possible signs, take the one folding toward the palm: the only way a finger
-// actually bends.
+// Where one bone points. The reasoning, and the tests, live in
+// hooks/boneAim.ts — including why the sign of the tracked depth is believed
+// where the magnitude is not, which is what lets a hand be held at an angle.
 function trackedDirection(
   glove: GloveState,
   points: Vector3[],
@@ -529,22 +529,16 @@ function trackedDirection(
   restLength: number,
   depthSign: number,
 ): Vector3 {
-  glove.dir.copy(points[aim[1]]).sub(points[aim[0]]);
-  glove.perp
-    .copy(glove.dir)
-    .addScaledVector(glove.viewAxis, -glove.dir.dot(glove.viewAxis));
-  const sideways = glove.perp.length();
-  if (sideways < 1e-5) {
-    return glove.dir.copy(glove.viewAxis).multiplyScalar(depthSign);
-  }
-
-  const reach = restLength * handTuning.fingerReach;
-  const depth =
-    sideways < reach ? Math.sqrt(reach * reach - sideways * sideways) : 0;
-  return glove.dir
-    .copy(glove.perp)
-    .addScaledVector(glove.viewAxis, depthSign * depth)
-    .normalize();
+  return boneAim(
+    points[aim[0]],
+    points[aim[1]],
+    glove.viewAxis,
+    restLength,
+    handTuning.fingerReach,
+    depthSign,
+    glove.aimScratch,
+    glove.dir,
+  );
 }
 
 const clamp = (value: number, min: number, max: number) =>
@@ -665,13 +659,10 @@ export function GloveHand({
       }
       // Lock visual size: rescale the landmark cloud around the wrist so bone
       // aiming matches the fixed glove scale. Without this, close hands feed
-      // oversized targets into a small rig and the fingers contort.
-      glove.v.copy(target[0]);
-      const measured = Math.max(target[0].distanceTo(target[9]), 1e-5);
-      const fit = LOCKED_SPAN / measured;
-      for (let i = 0; i < 21; i++) {
-        target[i].sub(glove.v).multiplyScalar(fit).add(glove.v);
-      }
+      // oversized targets into a small rig and the fingers contort. The debug
+      // overlay runs the same call, which is the only way the two can be laid
+      // over each other and compared.
+      lockSpan(target, glove.v);
       glove.span = LOCKED_SPAN;
     } else if (hand) {
       // Pointer fallback: only a cursor, so the resting pose stands in for a
@@ -869,6 +860,9 @@ export function GloveHand({
 
     // Fingers fold toward the palm side of the rig.
     glove.viewAxis.set(0, 0, 1).transformDirection(glove.inverse);
+    // Only a fallback now, for bones whose tracked depth is too small to read
+    // a sign from. It used to decide every bone, which is why a hand held at
+    // an angle collapsed with all its fingers pointing the same way.
     const depthSign = Math.sign(glove.viewAxis.dot(rig.palmDir)) || 1;
 
     // The wrist and the metacarpals stay at their bind pose, so the palm is one
