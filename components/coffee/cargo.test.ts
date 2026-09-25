@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CARGO } from "./cargo.ts";
 import { RECIPES } from "./recipes.ts";
-import { applyGrabLatch } from "../../hooks/grabLatch.ts";
+import { applyGrabLatch, GRAB_EXIT_FRAMES } from "../../hooks/grabLatch.ts";
 
 test("scoop cargo sits in the bowl, not on the handle", () => {
   const cargo = CARGO.scoop;
@@ -93,8 +93,23 @@ test("grab latch ignores single-frame pinch noise", () => {
   // One open frame is not enough to release.
   state = applyGrabLatch(state, 0.9, thresholds);
   assert.equal(state.isGrabbing, true);
-  for (let i = 0; i < 12; i++) state = applyGrabLatch(state, 0.9, thresholds);
+  for (let i = 0; i < GRAB_EXIT_FRAMES; i++) {
+    state = applyGrabLatch(state, 0.9, thresholds);
+  }
   assert.equal(state.isGrabbing, false);
+});
+
+test("a flicker in the hysteresis band does not cancel a let-go", () => {
+  const thresholds = { enter: 0.4, exit: 0.62 };
+  let state = {
+    isGrabbing: true,
+    pinchSmoothed: 0.2,
+    enterFrames: 0,
+    exitFrames: 3,
+  };
+  state = applyGrabLatch(state, 0.5, thresholds);
+  assert.equal(state.isGrabbing, true);
+  assert.ok(state.exitFrames >= 2, "the open count survives one soft frame");
 });
 
 test("brew fill for LiveCup stays in 0..1", () => {

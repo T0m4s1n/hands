@@ -38,6 +38,11 @@ test("a crank hold survives a blink and a side-on open", () => {
   assert.equal(crankShouldHold(false, false, CRANK_LOST_S, 0), false);
 });
 
+test("an open hand that left the mill lets go", () => {
+  assert.equal(crankShouldHold(true, false, 0, 0, true), false);
+  assert.equal(crankShouldHold(true, true, 0, 0, true), true);
+});
+
 test("a coasting holder is still driving the object", () => {
   assert.equal(holderIsDriving({ tracking: "coasting" }), true);
   assert.equal(holderIsDriving({ tracking: "live" }), true);

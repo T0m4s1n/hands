@@ -15,22 +15,34 @@ export type GrabLatchState = {
 };
 
 const PINCH_SMOOTH = 0.45;
+/** Opening should land in a beat, not after a held-shut delay. */
+const PINCH_OPEN_SMOOTH = 0.72;
 const GRAB_ENTER_FRAMES = 2;
-const GRAB_EXIT_FRAMES = 12;
+/** Two noisy frames are ignored. Twelve made a real open hand stay shut. */
+export const GRAB_EXIT_FRAMES = 5;
 
 /**
  * Grab latch with smoothed pinch + multi-frame enter/exit.
  * Single-frame tip noise used to flip isGrabbing and drop cups mid-carry.
+ * Opening is trusted faster than closing, and a flicker in the
+ * hysteresis band does not restart the let-go.
  */
 export function applyGrabLatch(
   prev: GrabLatchState,
   rawPinch: number,
   thresholds: GrabThresholds,
 ): GrabLatchState {
+  const toward = rawPinch - prev.pinchSmoothed;
+  const mix =
+    prev.pinchSmoothed <= 0
+      ? 1
+      : toward > 0
+        ? PINCH_OPEN_SMOOTH
+        : PINCH_SMOOTH;
   const pinchSmoothed =
     prev.pinchSmoothed <= 0
       ? rawPinch
-      : prev.pinchSmoothed + (rawPinch - prev.pinchSmoothed) * PINCH_SMOOTH;
+      : prev.pinchSmoothed + toward * mix;
 
   if (prev.isGrabbing) {
     if (pinchSmoothed >= thresholds.exit) {
@@ -50,11 +62,21 @@ export function applyGrabLatch(
         exitFrames,
       };
     }
+    // Only a real re-close cancels the let-go. Hovering in the band
+    // used to reset the counter every other frame.
+    if (pinchSmoothed < thresholds.enter) {
+      return {
+        isGrabbing: true,
+        pinchSmoothed,
+        enterFrames: 0,
+        exitFrames: 0,
+      };
+    }
     return {
       isGrabbing: true,
       pinchSmoothed,
       enterFrames: 0,
-      exitFrames: 0,
+      exitFrames: Math.max(0, prev.exitFrames - 1),
     };
   }
 

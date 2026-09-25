@@ -96,8 +96,8 @@ const HUD_INTERVAL_MS = 80;
  */
 const DETECTION_INTERVAL_MS = 1000 / 42;
 
-/** Generous enter so a natural pinch counts; exit stays open for hysteresis. */
-const DEFAULT_THRESHOLDS: GrabThresholds = { enter: 0.46, exit: 0.68 };
+/** Generous enter so a natural pinch counts; exit is close enough that a real open hand lets go. */
+const DEFAULT_THRESHOLDS: GrabThresholds = { enter: 0.46, exit: 0.6 };
 
 const WORLD_X = AIM_WORLD_X;
 

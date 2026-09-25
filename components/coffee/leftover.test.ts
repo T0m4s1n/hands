@@ -26,8 +26,8 @@ test("the filter bowl parks on the cone, not through the carafe", () => {
   assert.equal(dripperSeatZ(place, 0.2, 1.2, 0.12), DRIPPER.seat);
   assert.equal(dripperSeatZ(place, 2.4, 1.2, 0.12), 0.12, "away from the glass it is on the table");
   const parked = dripperPark(place, [0, 0.1]);
-  assert.ok(parked[0] < 0, "the bowl sits left of the glass origin");
-  assert.ok(parked[0] > -0.5, "still over the cone, not beside it");
+  assert.ok(parked[0] < -0.5, "the bowl sits left of the glass origin");
+  assert.ok(parked[0] > -0.85, "still on the station, not off the counter");
 });
 
 test("coffee fills the glass body under the dripper", () => {

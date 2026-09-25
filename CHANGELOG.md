@@ -11,6 +11,30 @@ sirve de nada dentro de seis meses.
 
 ## Sin publicar
 
+### La carta se lee sobre la taza
+
+- El tipo **ya no se pierde en el hueco**. El foto se corre a la
+  derecha y se oscurece; el lavado es más denso detrás de los
+  nombres. Sin tarjetas: solo contraste.
+
+### Soltar se lee como soltar
+
+- Un pellizco **abierto ya no lo tapa un puño de cámara**. La palma
+  un poco encogida seguía contando como agarre. El latch suelta en
+  cinco fotogramas y un parpadeo en la banda no reinicia el conteo.
+
+### El filtro un poco más a la izquierda
+
+- El bowl **se corre unos 5 cm** sobre el gotero. El origen del
+  modelo lo seguía dejando a la derecha del cono.
+
+### La manivela ya se puede soltar
+
+- Abrir la mano **ya no deja el mango pegado**. El extra de 0.45 s
+  encima del latch hacía que un puño abierto siguiera moliendo. Si
+  te alejas del molino, suelta al momento; un blink cerca todavía
+  aguanta.
+
 ### Moler no se congela al primer giro
 
 - El set del martillo **ya no traba el molino**. `amount` en moler son

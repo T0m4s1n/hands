@@ -19,7 +19,7 @@ export const DRIPPER = {
    */
   seat: 1.12,
   /** The bowl's visual mass sits right of its origin — nudge it onto the cone. */
-  shift: [-0.34, 0] as const,
+  shift: [-0.67, 0] as const,
 } as const;
 
 /** Aim the filter bowl at the cone, not the glass origin. */

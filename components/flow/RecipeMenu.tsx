@@ -273,15 +273,16 @@ export function RecipeMenu({
           className="recipe-hero absolute inset-0 h-full w-full object-cover"
         />
       ))}
-      <div className="absolute inset-0 bg-gradient-to-r from-canvas/92 via-canvas/55 to-canvas/20" />
-      <div className="absolute inset-0 bg-gradient-to-t from-canvas/70 via-transparent to-canvas/25" />
+      <div className="absolute inset-0 bg-gradient-to-r from-canvas from-15% via-canvas/80 via-45% to-canvas/10" />
+      <div className="absolute inset-0 bg-gradient-to-t from-canvas/80 via-transparent to-canvas/40" />
+      <div className="absolute inset-0 bg-gradient-to-l from-canvas/55 via-transparent to-transparent" />
 
       <div className="recipe-menu-ui relative flex h-full flex-col justify-between px-6 py-16 sm:flex-row sm:items-end sm:px-10 sm:pb-16 sm:pt-20 lg:px-16 lg:pb-20 lg:pt-24">
         <div className="max-w-xl">
-          <p className="t-caption uppercase tracking-[0.2em] text-tint">
+          <p className="recipe-type t-caption uppercase tracking-[0.2em] text-tint">
             La carta
           </p>
-          <p className="mt-2 text-[clamp(1.4rem,3.4vw,2.25rem)] font-semibold tracking-tight text-label-2">
+          <p className="recipe-type mt-2 text-[clamp(1.4rem,3.4vw,2.25rem)] font-semibold tracking-tight text-cream">
             ¿Qué pedimos?
           </p>
 
@@ -312,7 +313,7 @@ export function RecipeMenu({
                     {item.name}
                   </span>
                 </span>
-                <span className="recipe-blurb mt-1 block max-w-md pl-12 t-subhead text-label-2">
+                <span className="recipe-blurb recipe-type mt-1 block max-w-md pl-12 t-subhead text-cream/88">
                   {item.blurb}
                 </span>
                 <span className="recipe-track ml-12 mt-3 block h-[3px] w-44 overflow-hidden rounded-full bg-white/15">
@@ -326,7 +327,7 @@ export function RecipeMenu({
             ))}
           </div>
 
-          <p className="t-footnote mt-8 max-w-sm text-label-3">
+          <p className="recipe-type t-footnote mt-8 max-w-sm text-cream/70">
             Quédate un momento en el nombre para pedirlo. El pellizco
             también vale, si ya estás encima. Con el ratón, el clic basta.
           </p>
@@ -339,17 +340,17 @@ export function RecipeMenu({
               data-i={i}
               className="recipe-detail absolute inset-x-0 bottom-0"
             >
-              <p className="t-caption uppercase tracking-[0.18em] text-tint">
+              <p className="recipe-type t-caption uppercase tracking-[0.18em] text-tint">
                 {item.name}
               </p>
-              <p className="mt-3 text-[clamp(1.05rem,2vw,1.35rem)] font-medium leading-snug tracking-tight text-cream">
+              <p className="recipe-type mt-3 text-[clamp(1.05rem,2vw,1.35rem)] font-medium leading-snug tracking-tight text-cream">
                 {item.pitch}
               </p>
               <ol className="mt-6 space-y-1.5">
                 {item.stages.map((stage, s) => (
                   <li
                     key={stage.id}
-                    className="flex items-baseline gap-3 t-subhead text-label-2"
+                    className="recipe-type flex items-baseline gap-3 t-subhead text-cream/80"
                   >
                     <span className="w-5 font-sans tabular-nums text-tint">
                       {s + 1}

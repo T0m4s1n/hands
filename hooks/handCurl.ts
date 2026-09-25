@@ -76,18 +76,29 @@ export function gloveFolds(
 }
 
 /**
+ * Pinch this open is a let-go. A cupped selfie palm still folds in the
+ * image; treating that as a fist is what kept "soltar" from landing.
+ */
+export const OPEN_PINCH = 0.58;
+
+/**
  * Smaller is more closed — same units as pinch, so the existing latch
  * can take a fist or a pinch without a second machine. A half-closed
  * webcam fist already counts: MediaPipe rarely reports a tight 1.0.
+ *
+ * Fist may *confirm* a grab while the tips are still near each other.
+ * Once the pinch is open, the player let go — curl must not override.
  */
 export function grabClosure(
   pinch: number,
   fist: number,
 ): number {
+  const p = Math.min(1, Math.max(0, pinch));
   const f = Math.min(1, Math.max(0, fist));
   // A loose webcam curl is not a fist. Only the last third of the fold
   // should beat a pinch — otherwise a bent finger grabs by accident.
   const useful = Math.max(0, (f - 0.42) / 0.58);
   const closed = useful * useful * (3 - 2 * useful);
-  return Math.min(pinch, 1 - closed);
+  if (p >= OPEN_PINCH) return p;
+  return Math.min(p, 1 - closed);
 }

@@ -898,8 +898,27 @@ export function CoffeeGame({
       }
       const lostS = game.crankLostAt < 0 ? 0 : time - game.crankLostAt;
       const openS = game.crankOpenAt < 0 ? 0 : time - game.crankOpenAt;
+      const grabAt = stage.kind === "crank" ? CRANK_GRAB_RADIUS : GRAB_RADIUS;
+      const away = holder
+        ? (stage.kind === "crank"
+            ? crankGrabReach(
+                handObjectDistance(holder, game.pos.x, game.pos.y),
+                handObjectDistance(
+                  holder,
+                  stage.target[0],
+                  stage.target[1],
+                ),
+              )
+            : handObjectDistance(holder, game.pos.x, game.pos.y)) > grabAt
+        : false;
       if (
-        crankShouldHold(Boolean(holder), Boolean(holder?.isGrabbing), lostS, openS)
+        crankShouldHold(
+          Boolean(holder),
+          Boolean(holder?.isGrabbing),
+          lostS,
+          openS,
+          away,
+        )
       ) {
         release = "none";
         holderIsLive = true;
@@ -939,7 +958,7 @@ export function CoffeeGame({
 
     if (holder && holderIsLive && !released && !game.dumping && !game.tamping) {
       if (stage.kind === "crank") {
-        if (crankHandIsLive(holder)) {
+        if (crankHandIsLive(holder) && holder.isGrabbing) {
           const angle = Math.atan2(
             holder.cursor.y - stage.target[1],
             holder.cursor.x - stage.target[0],

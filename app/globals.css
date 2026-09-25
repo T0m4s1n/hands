@@ -615,6 +615,8 @@ input[type="range"] {
 
 .recipe-hero {
   opacity: 0;
+  object-position: 72% 45%;
+  filter: brightness(0.72) saturate(0.92);
   transition: opacity 280ms var(--ease-sheet);
   will-change: opacity;
 }
@@ -627,11 +629,22 @@ input[type="range"] {
   opacity: 1;
 }
 
+/* Soft halo only — a hard offset reads as a second letter on the cup. */
+.recipe-type {
+  text-shadow:
+    0 1px 0 rgb(0 0 0 / 0.55),
+    0 0 22px rgb(20 4 8 / 0.7);
+}
+
 .recipe-name {
   font-size: clamp(2.35rem, 6.2vw, 4.5rem);
-  transform: scale(0.72);
+  transform: scale(0.84);
   transform-origin: left center;
-  color: rgb(255 255 255 / 0.38);
+  color: rgb(255 250 244 / 0.72);
+  letter-spacing: -0.03em;
+  text-shadow:
+    0 1px 0 rgb(0 0 0 / 0.45),
+    0 0 18px rgb(20 4 8 / 0.55);
   transition:
     transform 200ms var(--ease-sheet),
     color 200ms var(--ease-sheet);
@@ -640,12 +653,14 @@ input[type="range"] {
 
 .recipe-opt[data-on] .recipe-name {
   transform: scale(1);
-  color: var(--color-cream);
-  text-shadow: 0 2px 24px rgb(0 0 0 / 0.35);
+  color: #fff8ee;
+  text-shadow:
+    0 1px 0 rgb(0 0 0 / 0.55),
+    0 8px 28px rgb(0 0 0 / 0.45);
 }
 
 .recipe-num {
-  color: rgb(255 250 244 / 0.3);
+  color: rgb(255 250 244 / 0.55);
   transition: color 180ms var(--ease-sheet);
 }
 
@@ -695,7 +710,7 @@ input[type="range"] {
 
 @media (hover: hover) {
   .recipe-opt:not([data-on]):hover .recipe-name {
-    color: rgb(255 255 255 / 0.62);
+    color: rgb(255 250 244 / 0.9);
   }
 }
 

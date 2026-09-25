@@ -38,9 +38,13 @@ test("a confirmed grab still puts a floor under every finger", () => {
 });
 
 test("a closed fist is as grabby as a pinch", () => {
-  assert.ok(grabClosure(0.8, 0.85) < 0.2);
+  assert.ok(grabClosure(0.3, 0.85) < 0.2, "a real fist still grabs");
   assert.ok(grabClosure(0.15, 0.1) < 0.2);
   assert.ok(grabClosure(0.8, 0.1) > 0.7);
   assert.ok(grabClosure(0.75, 0.5) > 0.55);
-  assert.ok(grabClosure(0.75, 0.9) < 0.25);
+});
+
+test("an open pinch is a let-go even if the palm looks cupped", () => {
+  assert.ok(grabClosure(0.8, 0.85) > 0.7);
+  assert.ok(grabClosure(0.75, 0.9) > 0.7);
 });
