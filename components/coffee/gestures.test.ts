@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import {
   angleDelta,
   newStroke,
+  crankHandIsLive,
+  driveCrank,
   newTurn,
   palmAngle,
   pourFlow,
@@ -36,14 +38,29 @@ const near = (a: number, b: number, slack = 1e-6) =>
   console.log("ok  a crank counts turning in both directions");
 }
 
-// 3. A tracker jump is not a turn: the angle moves on, the total does not.
+// 3. A tracker jump is not a turn: the handle stays put.
 {
   const turn = newTurn(0);
   const added = updateTurn(turn, 2.4);
   assert.equal(added, 0);
   assert.equal(turn.turned, 0);
-  assert.equal(turn.angle, 2.4, "it still follows the handle");
+  assert.equal(turn.angle, 0, "a teleport must not take the pestle with it");
   console.log("ok  a jump across the circle is ignored");
+}
+
+// 3b. Re-entering the frame on the far side does not swing the mill.
+{
+  const turn = newTurn(0.4);
+  assert.equal(driveCrank(turn, 0.4 + Math.PI, 1 / 60), 0);
+  assert.equal(turn.angle, 0.4);
+  assert.equal(crankHandIsLive({ tracking: "coasting" }), false);
+  assert.equal(crankHandIsLive({ tracking: "live" }), true);
+  assert.equal(crankHandIsLive(undefined), false);
+  const slow = newTurn(0);
+  const moved = driveCrank(slow, 0.5, 1 / 60);
+  assert.ok(moved > 0 && moved < 0.5, "accepted motion is rate-limited");
+  assert.ok(slow.angle < 0.5);
+  console.log("ok  a re-entered hand does not teleport the mill");
 }
 
 // 4. The palm angle runs from the wrist to the middle knuckle.

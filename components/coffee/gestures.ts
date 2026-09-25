@@ -25,7 +25,9 @@ export const TILT_FULL = 1.15;
  * A turn bigger than this between two frames is the tracker jumping, not a
  * wrist: nobody cranks a handle at thirty-odd radians a second.
  */
-const MAX_TURN_STEP = 0.6;
+export const MAX_TURN_STEP = 0.6;
+/** Fastest a real wrist swings the pestle. A teleport is always faster. */
+export const MAX_CRANK_RATE = 7;
 
 /** The shortest way round from one angle to another, in -PI..PI. */
 export function angleDelta(from: number, to: number): number {
@@ -72,15 +74,46 @@ export function newTurn(angle: number): TurnState {
  * Direction does not matter — turning it back the other way still grinds — so
  * the total only ever grows.
  *
+ * A tracker jump does not move the handle. Following it used to hide score
+ * debt, and instead teleported the pestle when a hand left or re-entered
+ * the frame.
+ *
  * @returns the amount added, which is zero when the step looked like a glitch.
  */
 export function updateTurn(state: TurnState, angle: number): number {
   const step = angleDelta(state.angle, angle);
-  state.angle = angle;
   if (Math.abs(step) > MAX_TURN_STEP) return 0;
+  state.angle = angle;
   const moved = Math.abs(step);
   state.turned += moved;
   return moved;
+}
+
+/**
+ * Drive the mill handle toward the hand. Jumps stay put. Accepted motion
+ * is rate-limited so the pestle swings instead of snapping.
+ */
+export function driveCrank(
+  state: TurnState,
+  handAngle: number,
+  dt: number,
+): number {
+  const step = angleDelta(state.angle, handAngle);
+  if (Math.abs(step) > MAX_TURN_STEP) return 0;
+  const cap = MAX_CRANK_RATE * Math.min(0.08, Math.max(0, dt));
+  const applied = Math.abs(step) <= cap ? step : Math.sign(step) * cap;
+  state.angle += applied;
+  const moved = Math.abs(applied);
+  state.turned += moved;
+  return moved;
+}
+
+/** Invented coast motion must not spin the mill. */
+export function crankHandIsLive(
+  hand?: { tracking?: "live" | "coasting" } | null,
+) {
+  if (!hand) return false;
+  return hand.tracking !== "coasting";
 }
 
 /* ---------- strokes: shaking, pressing ---------- */

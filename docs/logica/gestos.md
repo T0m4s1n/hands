@@ -21,6 +21,8 @@ angleDelta(from, to): number
 palmAngle(landmarks): number
 pourFlow(tilt): number
 newTurn(angle): TurnState        updateTurn(state, angle): number
+driveCrank(state, angle, dt): number
+crankHandIsLive(hand): boolean
 newStroke(value): StrokeState    updateStroke(state, value, amplitude): number
 ```
 
@@ -48,9 +50,14 @@ Simétrico en signo.
 `:77-84`. Acumula `|angleDelta|` en `turned` **sin importar la dirección**, así
 que girar la manivela en cualquier sentido cuenta.
 
-Un paso mayor que `MAX_TURN_STEP = 0.6` rad (`:26-28`) se rechaza como salto del
-tracker — "nobody cranks a handle at thirty-odd radians a second" — pero el
-`angle` guardado **sí** avanza, para no acumular deuda.
+Un paso mayor que `MAX_TURN_STEP = 0.6` rad se rechaza como salto del
+tracker — "nobody cranks a handle at thirty-odd radians a second" — y el
+`angle` **no** avanza. Seguir el salto era lo que teletransportaba el
+molino cuando una mano salía o volvía a entrar en cámara.
+
+`driveCrank` es lo que usa el juego: el mismo rechazo, más un tope de
+`MAX_CRANK_RATE = 7` rad/s para que el mango gire en vez de saltar.
+Una mano `coasting` no conduce (`crankHandIsLive`).
 
 ## `updateStroke`
 

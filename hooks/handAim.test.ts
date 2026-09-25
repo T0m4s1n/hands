@@ -29,6 +29,10 @@ test("a close-up does not aim as low as the wrist in the frame", () => {
   assert.ok(closeAim.y > knuckleCenter(close).y - 0.02);
   assert.ok(playAim.y < play[0].y);
   assert.ok(playAim.y > knuckleCenter(play).y - 0.05);
+  assert.ok(
+    Math.abs(closeAim.y - playAim.y) < 0.12,
+    "leaning in must not dump the mitt at the front of the counter",
+  );
 });
 
 test("world aim stays at hover even when landmark z is large", () => {

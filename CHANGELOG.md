@@ -11,6 +11,37 @@ sirve de nada dentro de seis meses.
 
 ## Sin publicar
 
+### Acercar la mano ya no mata el molino
+
+- Un close-up **sigue siendo una mano**. El filtro de calidad la tiraba
+  como si la palma fuera una pared, y MediaPipe soltaba la presencia
+  en cuanto los dedos tocaban el borde.
+- El aim de cerca **ya no empuja el guante al frente** de la barra.
+  Y el agarre de la manivela vale en todo el molino, no sólo en la
+  punta: no hace falta recostarse al lente para alcanzarla.
+
+### El molino ya no se tepea al moler
+
+- La manivela **ya no copia el atan2 crudo** de la mano. Un salto del
+  tracker (mano que sale o entra de cámara) se ignora: el mango se
+  queda donde estaba. Tampoco gira con una mano en costa.
+- Al agarrar otra vez, la manivela **no vuela** hasta el nuevo ángulo
+  de la muñeca.
+
+### El puntero de la carta ya no tiembla
+
+- El retículo **ya no come el 72% del salto cada frame**. Sigue el
+  índice por tiempo real: casi quieto con el pulso de la webcam,
+  más ágil solo cuando la mano de verdad se mueve.
+
+### El puntero de la carta ya no salta de mano
+
+- El menú **traba el índice a la muñeca**, no a Left/Right. Esas
+  etiquetas se intercambian y el retículo iba y venía entre las dos
+  palmas; la carga se reiniciaba y el pedido no cerraba.
+- Un lock nuevo tiene `lockId` propio. Un flip de chirality ya no
+  cuenta como otra mano.
+
 ### El vaciado se lee y la mano deja de pelearse
 
 - El vaciado ahora tiene **arranque, vuelco y espera**: la muñeca y

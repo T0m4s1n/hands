@@ -9,6 +9,7 @@ import {
 } from "@/components/coffee/recipes";
 import type { TrackedHand } from "@/hooks/useHandTracking";
 import { useHandCursor, type HandCursor } from "./useHandCursor";
+import { menuAimPoint } from "@/hooks/screenAim";
 import {
   canDwellSelect,
   canPinchSelect,
@@ -42,7 +43,7 @@ export function RecipeMenu({
   const pickedRef = useRef(false);
   const holdRef = useRef({ index: -1, started: 0 });
   const wasGrabbing = useRef(false);
-  const lockSideRef = useRef<HandCursor["handedness"]>(null);
+  const lockIdRef = useRef(0);
   const focusRef = useRef(0);
   const boxesRef = useRef<{ i: number; left: number; right: number; top: number; bottom: number }[]>(
     [],
@@ -132,9 +133,10 @@ export function RecipeMenu({
         hintRef.current.style.opacity = cursor.active ? "0" : "1";
       }
 
-      // New lock (or lost lock) must not finish a charge started by the other hand.
-      if (cursor.handedness !== lockSideRef.current) {
-        lockSideRef.current = cursor.handedness;
+      // A new claim (or a lost lock) must not finish another hand's charge.
+      // Identity is lockId, not Left/Right — those labels flip mid-aim.
+      if (cursor.lockId !== lockIdRef.current) {
+        lockIdRef.current = cursor.lockId;
         holdRef.current = { index: -1, started: 0 };
         setCharge(focusRef.current, 0);
         wasGrabbing.current = false;
@@ -170,11 +172,16 @@ export function RecipeMenu({
 
       if (next >= 0) applyFocus(next);
 
-      const owner = cursor.handedness
-        ? (handsRef.current ?? []).find(
-            (hand) => hand.handedness === cursor.handedness,
-          )
-        : undefined;
+      let owner: TrackedHand | undefined;
+      let ownerDist = Infinity;
+      for (const hand of handsRef.current ?? []) {
+        const tip = menuAimPoint(hand);
+        if (!tip) continue;
+        const d = Math.hypot(tip.x - cursor.x, tip.y - cursor.y);
+        if (d > 0.16 || d >= ownerDist) continue;
+        owner = hand;
+        ownerDist = d;
+      }
       const pointerMode = Boolean(owner && !canDwellSelect(owner));
 
       if (next >= 0 && !pointerMode) {

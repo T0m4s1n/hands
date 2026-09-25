@@ -3,9 +3,10 @@ import type { Vec3 } from "./useHandTracking.ts";
 /**
  * How much a 21-point cloud looks like a real hand.
  *
- * Low light and a drifted tracker both produce the same junk: every joint
- * collapsed onto the wrist, or a palm so huge it is a wall. Feeding those
- * into assignment teleports the glove. Better to drop the frame and coast.
+ * Low light and a drifted tracker collapse every joint onto the wrist.
+ * Drop those and coast. A palm that fills the frame is not that — it is
+ * a hand held up to the lens to reach the mill. Treating it as a wall
+ * is what made "Muele" lose the glove the moment the player leaned in.
  */
 export const MIN_SKELETON_QUALITY = 0.4;
 
@@ -21,7 +22,6 @@ export function skeletonQuality(landmarks: readonly Vec3[]): number {
   const palm = Math.hypot(middle.x - wrist.x, middle.y - wrist.y);
   const width = Math.hypot(index.x - pinky.x, index.y - pinky.y);
   if (palm < 0.022 || width < 0.016) return 0;
-  if (palm > 0.72 || width > 0.88) return 0.08;
 
   let spread = 0;
   for (const point of landmarks) {
@@ -29,10 +29,16 @@ export function skeletonQuality(landmarks: readonly Vec3[]): number {
   }
   if (spread < 0.18) return 0;
 
+  const ratio = width / Math.max(palm, 1e-5);
+  // Only a smear that ate the whole frame, with no finger layout, is junk.
+  if ((palm > 1.2 || width > 1.25) && (ratio < 0.22 || ratio > 3.6)) {
+    return 0.08;
+  }
+
   let score = 0.5;
-  const ratio = width / palm;
   if (ratio > 0.4 && ratio < 2.5) score += 0.22;
   if (palm > 0.045 && palm < 0.38) score += 0.16;
+  else if (palm >= 0.38 && ratio > 0.32 && ratio < 2.9) score += 0.16;
   const thumbReach = Math.hypot(thumb.x - wrist.x, thumb.y - wrist.y);
   if (thumbReach > palm * 0.25) score += 0.08;
   return Math.min(1, score);

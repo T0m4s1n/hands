@@ -2,11 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { RECIPES } from "./recipes.ts";
 import {
+  crankGrabReach,
   overStation,
   stageStation,
   stationOf,
   stationQuality,
 } from "./station.ts";
+
+test("the mill body is enough to grab the crank", () => {
+  assert.equal(crankGrabReach(1.6, 0.4), 0);
+  assert.ok(crankGrabReach(0.2, 2.4) < 0.3);
+  assert.ok(crankGrabReach(2.2, 2.2) > 1);
+});
 
 test("landing in the grinder bowl is a complete dose, not a bullseye hunt", () => {
   const grinder = stationOf("grinder");

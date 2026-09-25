@@ -107,7 +107,7 @@ etapa en vez de heredar "a stale carry height from the last stage", que
 | Tipo | Cómo se conduce | Cómo se puntúa |
 | --- | --- | --- |
 | `place` | Nada por fotograma | `placeScore(reach, radius)` al soltar o al agotarse el tiempo |
-| `crank` | `angle = atan2(cursor − target)`, `amount = turn.turned` (radianes, sin dirección) | `bandScore` |
+| `crank` | `driveCrank` hacia `atan2(cursor − target)`; un salto o una costa no mueve el mango | `bandScore` |
 | `hold` | Dentro del anillo, `amount += rate * dt` | `bandScore` sobre nivel 0..1 |
 | `tamp` | `updateStroke(stroke, cursor.y, PRESS_THROW)`; sólo **bajando** y dentro del anillo suma 1 | `bandScore` |
 | `shake` | `updateStroke(stroke, cursor.x, SHAKE_THROW)`; cuenta cada cambio de sentido | `bandScore` |

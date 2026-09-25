@@ -20,7 +20,9 @@ export const REST_PALM_SPAN = 0.18;
  * How much extra apparent size is subtracted from image Y.
  * A laptop camera looks down: closer hands sit lower in the frame.
  */
-export const CLOSE_LIFT = 0.18;
+export const CLOSE_LIFT = 0.48;
+/** Never lift more than this, or the mitt stops matching the video. */
+export const CLOSE_LIFT_CAP = 0.14;
 
 const KNUCKLES = [5, 9, 13, 17] as const;
 
@@ -61,7 +63,7 @@ export function aimImage(landmarks: readonly AimPoint[]): { x: number; y: number
   const extra = Math.max(0, palmSpan(landmarks) - REST_PALM_SPAN);
   return {
     x: wrist.x * 0.35 + knuckles.x * 0.65,
-    y: wrist.y * 0.35 + knuckles.y * 0.65 - Math.min(0.12, extra * 0.18),
+    y: wrist.y * 0.35 + knuckles.y * 0.65 - Math.min(CLOSE_LIFT_CAP, extra * CLOSE_LIFT),
   };
 }
 

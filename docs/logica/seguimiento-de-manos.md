@@ -36,10 +36,10 @@ no puede ver ni reescribir.
 
 Opciones del landmarker: `runningMode: "VIDEO"`, `numHands: 4` (candidatos),
 luego `selectPersonHands` deja **como máximo dos** y de **una sola persona**.
-`minHandDetectionConfidence: 0.32`, `minHandPresenceConfidence: 0.55`,
-`minTrackingConfidence: 0.5` — si la presencia baja, se vuelve a buscar la
-palma en vez de arrastrar la caja anterior. Se intenta cada modelo en GPU
-y se cae a CPU.
+`minHandDetectionConfidence: 0.32`, `minHandPresenceConfidence: 0.42`,
+`minTrackingConfidence: 0.42` — un close-up recorta las yemas y bajaba
+la presencia por debajo de 0.55, que es lo que mataba el molino. Se
+intenta cada modelo en GPU y se cae a CPU.
 
 **Invalidación de sesión por contador**: `stop()` incrementa
 `sessionRef.current`, y cada frontera `await` vuelve a comprobar `stillActive()`

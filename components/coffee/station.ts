@@ -47,6 +47,17 @@ export function stageStation(kind: StageKind, sits: PropKind): Station {
   return base;
 }
 
+/**
+ * How near the crank hand is. The whole mill is the grab — not just the
+ * pestle tip. Reaching that tip meant leaning into the camera, which is
+ * what killed recognition on "Muele".
+ */
+export const CRANK_GRAB_WELL = 0.9;
+
+export function crankGrabReach(handleDist: number, millDist: number): number {
+  return Math.min(handleDist, Math.max(0, millDist - CRANK_GRAB_WELL));
+}
+
 export function overStation(distance: number, station: Station): boolean {
   return distance <= station.mouth;
 }

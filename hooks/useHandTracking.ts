@@ -341,11 +341,10 @@ export function useHandTracking() {
           numHands: MAX_HANDS,
           // Find the palm even in a lifted-but-still-dim frame.
           minHandDetectionConfidence: 0.32,
-          // If the bones look unsure, re-run palm detection instead of
-          // dragging last frame's box — that is what turns a blink into
-          // a broken skeleton.
-          minHandPresenceConfidence: 0.55,
-          minTrackingConfidence: 0.5,
+          // A close-up clips fingertips and drops presence. The old 0.55
+          // cut the mill grab the moment the player leaned toward the lens.
+          minHandPresenceConfidence: 0.42,
+          minTrackingConfidence: 0.42,
         });
 
       let landmarker: HandLandmarker | undefined;

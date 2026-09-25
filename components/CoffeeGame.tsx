@@ -57,12 +57,13 @@ import {
 } from "@/components/coffee/solid";
 import {
   angleDelta,
+  crankHandIsLive,
+  driveCrank,
   newStroke,
   newTurn,
   palmAngle,
   pourFlow,
   updateStroke,
-  updateTurn,
   type StrokeState,
   type TurnState,
 } from "@/components/coffee/gestures";
@@ -76,6 +77,7 @@ import {
   type Stage,
 } from "@/components/coffee/recipes";
 import {
+  crankGrabReach,
   overStation,
   stageStation,
   stationQuality,
@@ -123,6 +125,8 @@ export type StageStatus = {
 
 /** Reach matches the locked glove size — not the MediaPipe image span. */
 const GRAB_RADIUS = 1.55;
+/** The mill is a bigger target so the player does not lean into the lens. */
+const CRANK_GRAB_RADIUS = 1.9;
 const REST_Z = 0.12;
 /**
  * The height a carried object rides at when it has nothing to clear.
@@ -720,8 +724,16 @@ export function CoffeeGame({
         game.wasGrabbing[handedness] = false;
         continue;
       }
-      const reach = handObjectDistance(hand, game.pos.x, game.pos.y);
-      if (reach < GRAB_RADIUS && reach < nearReach) {
+      const handleDist = handObjectDistance(hand, game.pos.x, game.pos.y);
+      const reach =
+        stage.kind === "crank"
+          ? crankGrabReach(
+              handleDist,
+              handObjectDistance(hand, stage.target[0], stage.target[1]),
+            )
+          : handleDist;
+      const grabAt = stage.kind === "crank" ? CRANK_GRAB_RADIUS : GRAB_RADIUS;
+      if (reach < grabAt && reach < nearReach) {
         near = true;
         nearHand = handedness;
         nearReach = reach;
@@ -729,7 +741,7 @@ export function CoffeeGame({
 
       const grabbing = hand.isGrabbing;
       if (grabbing && !game.wasGrabbing[handedness] && !game.holder) {
-        if (reach < GRAB_RADIUS) {
+        if (reach < grabAt) {
           playSfx("grab");
           game.holder = handedness;
           game.changed = true;
@@ -745,10 +757,8 @@ export function CoffeeGame({
           game.grabAngle = hand.roll ?? palmAngle(hand.smoothedLandmarks);
           game.tilt = 0;
           if (stage.kind === "crank") {
-            game.angle = Math.atan2(
-              hand.cursor.y - stage.target[1],
-              hand.cursor.x - stage.target[0],
-            );
+            // Keep the pestle where it is. Snapping to the hand's angle is
+            // what teleported the mill when a wrist re-entered the frame.
             game.turn = newTurn(game.angle);
             game.turn.turned = game.amount;
           }
@@ -806,15 +816,17 @@ export function CoffeeGame({
 
     if (holder && holderIsLive && !released && !game.dumping) {
       if (stage.kind === "crank") {
-        const angle = Math.atan2(
-          holder.cursor.y - stage.target[1],
-          holder.cursor.x - stage.target[0],
-        );
-        const turn = (game.turn ??= newTurn(angle));
-        const moved = updateTurn(turn, angle);
-        working = clamp01(moved / Math.max(dt, 1e-3) / 6);
-        game.angle = angle;
-        game.amount = turn.turned;
+        if (crankHandIsLive(holder)) {
+          const angle = Math.atan2(
+            holder.cursor.y - stage.target[1],
+            holder.cursor.x - stage.target[0],
+          );
+          const turn = (game.turn ??= newTurn(game.angle));
+          const moved = driveCrank(turn, angle, dt);
+          working = clamp01(moved / Math.max(dt, 1e-3) / 6);
+          game.angle = turn.angle;
+          game.amount = turn.turned;
+        }
       } else {
         // Carried objects chase the hand instead of snapping to it, which hides
         // the jitter that is always present in tracking — and heavy ones chase

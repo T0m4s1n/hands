@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  MIN_SKELETON_QUALITY,
   blendWorldDepth,
   keepGoodHands,
   skeletonQuality,
@@ -32,6 +33,17 @@ const OPEN_HAND: { x: number; y: number; z: number }[] = [
 
 test("a real open hand is accepted", () => {
   assert.ok(skeletonQuality(OPEN_HAND) >= 0.6);
+});
+
+test("a hand held up to the lens is still a hand", () => {
+  const wrist = OPEN_HAND[0];
+  const close = OPEN_HAND.map((point) => ({
+    x: wrist.x + (point.x - wrist.x) * 4,
+    y: wrist.y + (point.y - wrist.y) * 4,
+    z: point.z,
+  }));
+  assert.ok(skeletonQuality(close) >= MIN_SKELETON_QUALITY);
+  assert.equal(keepGoodHands([{ raw: close, labelScore: 0.5 }]).length, 1);
 });
 
 test("a collapsed cloud is junk", () => {
