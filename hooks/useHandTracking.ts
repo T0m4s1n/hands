@@ -83,20 +83,24 @@ const WASM_URL =
 const MEDIAPIPE_MODULE_URL =
   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs";
 /**
- * float16 on GPU is the same architecture and much cheaper per frame.
- * float32 stays as a fallback if the 16-bit files are missing.
+ * Newest published bundle first. float32 is the same architecture with less
+ * quantisation noise on the bones; if that file is missing we walk down to
+ * Google's rolling "latest" and finally the pinned float16 everyone hosts.
  */
 const MODEL_CANDIDATES = [
+  "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float32/1/hand_landmarker.task",
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task",
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
-  "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float32/1/hand_landmarker.task",
 ] as const;
 
 const MAX_HANDS = DETECT_HAND_CANDIDATES;
 const HUD_INTERVAL_MS = 80;
-/** Target inferences. Higher than this freezes the page on the main thread. */
-const DETECT_MIN_MS = 1000 / 36;
-const DETECT_MAX_MS = 1000 / 20;
+/**
+ * MediaPipe inference is the expensive part, not drawing the interpolated
+ * glove. Thirty-six fresh poses per second keep a swipe honest; R3F then
+ * extrapolates the last motion so the mitt does not sit still between samples.
+ */
+const DETECTION_INTERVAL_MS = 1000 / 42;
 
 /** Generous enter so a natural pinch counts; exit is close enough that a real open hand lets go. */
 const DEFAULT_THRESHOLDS: GrabThresholds = { enter: 0.46, exit: 0.6 };
@@ -379,9 +383,6 @@ export function useHandTracking() {
 
       let lastHud = 0;
       let lastDetectionAt = -Infinity;
-      let detectGapMs = DETECT_MIN_MS;
-      let lastFrameW = 0;
-      let lastFrameH = 0;
       let detectedHands: TrackedHand[] = [];
 
       const publish = (ageSec: number) => {
@@ -407,21 +408,15 @@ export function useHandTracking() {
 
         const frameWidth = currentVideo.videoWidth;
         const frameHeight = currentVideo.videoHeight;
-        if (frameWidth !== lastFrameW || frameHeight !== lastFrameH) {
-          lastFrameW = frameWidth;
-          lastFrameH = frameHeight;
-          setFrameShape(frameWidth, frameHeight);
-        }
+        setFrameShape(frameWidth, frameHeight);
 
-        const videoTime = currentVideo.currentTime;
-        const freshFrame = videoTime !== lastVideoTimeRef.current;
-        if (freshFrame && tickNow - lastDetectionAt >= detectGapMs) {
+        if (tickNow - lastDetectionAt >= DETECTION_INTERVAL_MS) {
           const detectionDt =
             lastDetectionAt === -Infinity
-              ? 1 / 30
+              ? 1 / 36
               : Math.min(0.12, (tickNow - lastDetectionAt) / 1000);
           lastDetectionAt = tickNow;
-          lastVideoTimeRef.current = videoTime;
+          lastVideoTimeRef.current = currentVideo.currentTime;
           const timestamp = Math.max(
             tickNow,
             lastTimestampRef.current + 1,
@@ -499,11 +494,6 @@ export function useHandTracking() {
             // Keep the last good pose; a duplicate video timestamp must not
             // freeze the published hands for the rest of the session.
           }
-          const cost = performance.now() - tickNow;
-          detectGapMs =
-            cost > 14
-              ? Math.min(DETECT_MAX_MS, Math.max(detectGapMs, cost * 1.6))
-              : Math.max(DETECT_MIN_MS, detectGapMs * 0.92);
         }
 
         publish((tickNow - lastDetectionAt) / 1000);

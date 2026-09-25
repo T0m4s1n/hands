@@ -24,10 +24,10 @@ El `MediaStream` resultante se entrega a `useHandTracking().start(stream)`.
 ```
 WASM_URL   https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm
 MODULE_URL https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs
-MODELOS    float16/latest → float16/1 → float32/1
+MODELOS    float32/1 → float16/latest → float16/1
 ```
 
-El fotograma se prepara en `handFrame.ts` (espejo, 640 px, filtro de luz)
+El fotograma se prepara en `handFrame.ts` (espejo, 960 px, filtro de luz)
 y los esqueletos rotos se tiran en `handQuality.ts`.
 
 `loadMediaPipe()` (`:160-165`) importa el módulo con
@@ -48,9 +48,7 @@ acaba de crear en vez de instalarlo.
 
 ## El bucle por fotograma
 
-`tick()`, sobre `requestAnimationFrame`: publica el guante cada
-refresco e infiere 20–36 veces por segundo, según cuánto tarde el
-modelo. Inferir en cada fotograma de cámara congelaba la página.
+`tick()` (`:412-532`), sobre `requestAnimationFrame`:
 
 1. `dt = Math.min(0.1, (now - lastTick) / 1000)` — tiempo real transcurrido,
    "so the smoother settles in the same wall-clock time whatever the frame rate
