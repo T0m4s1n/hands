@@ -106,7 +106,7 @@ import {
   tampAmount,
   tampHits,
   tampPose,
-  tampSetOpen,
+  tampBusyOnStage,
 } from "@/components/coffee/tampPress";
 import { destinationOf } from "@/components/flow/playCopy";
 import { CRANK_ARM, CREMA, GROUNDS, Level, Prop } from "@/components/coffee/props";
@@ -801,7 +801,12 @@ export function CoffeeGame({
     let nearReach = Infinity;
     let working = 0;
     let holderIsLive = false;
-    const tampBusy = tampSetOpen(game.tamping, game.amount, tampGoal);
+    const tampBusy = tampBusyOnStage(
+      stage.kind,
+      game.tamping,
+      game.amount,
+      tampGoal,
+    );
     if (game.dumping) {
       near = true;
       nearHand = game.holder;

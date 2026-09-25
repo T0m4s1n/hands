@@ -6,6 +6,7 @@ import {
   tampAmount,
   tampHits,
   tampPose,
+  tampBusyOnStage,
   tampSetOpen,
 } from "./tampPress.ts";
 
@@ -33,6 +34,13 @@ test("a started set stays open until the last strike", () => {
   assert.equal(tampSetOpen(false, 1, 3), true);
   assert.equal(tampSetOpen(false, 3, 3), false);
   assert.equal(tampSetOpen(false, 0, 3), false);
+});
+
+test("grind radians never look like a tamp set in progress", () => {
+  assert.equal(tampBusyOnStage("crank", false, 1.5, 3), false);
+  assert.equal(tampBusyOnStage("place", false, 1, 3), false);
+  assert.equal(tampBusyOnStage("tamp", false, 1, 3), true);
+  assert.equal(tampBusyOnStage("tamp", true, 0, 3), true);
 });
 
 test("the last strike of the set hits harder than the first", () => {

@@ -11,6 +11,14 @@ sirve de nada dentro de seis meses.
 
 ## Sin publicar
 
+### Moler no se congela al primer giro
+
+- El set del martillo **ya no traba el molino**. `amount` en moler son
+  radianes; tratar 0…3 como «prensando» cortaba el agarre y el paso
+  no podía terminar.
+- Un círculo más rápido que el mango **ya no lo para**. La manivela
+  persigue a tope en vez de rechazar el paso.
+
 ### El martillo del espresso golpea de verdad
 
 - El prensado **ya no es un dip de cámara**. Tres golpes animados

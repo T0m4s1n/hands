@@ -48,11 +48,13 @@ const near = (a: number, b: number, slack = 1e-6) =>
   console.log("ok  a jump across the circle is ignored");
 }
 
-// 3b. Re-entering the frame on the far side does not swing the mill.
+// 3b. A far hand does not snap the mill; it chases at crank speed.
 {
   const turn = newTurn(0.4);
-  assert.equal(driveCrank(turn, 0.4 + Math.PI, 1 / 60), 0);
-  assert.equal(turn.angle, 0.4);
+  const jumped = driveCrank(turn, 0.4 + Math.PI, 1 / 60);
+  assert.ok(jumped > 0 && jumped < 0.2, "a blink chases, it does not snap");
+  assert.ok(Math.abs(turn.angle - 0.4) < 0.2);
+  assert.ok(Math.abs(turn.angle - (0.4 + Math.PI)) > 2);
   assert.equal(crankHandIsLive({ tracking: "coasting" }), true);
   assert.equal(crankHandIsLive({ tracking: "live" }), true);
   assert.equal(crankHandIsLive(undefined), false);

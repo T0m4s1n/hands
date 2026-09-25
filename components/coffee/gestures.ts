@@ -90,8 +90,9 @@ export function updateTurn(state: TurnState, angle: number): number {
 }
 
 /**
- * Drive the mill handle toward the hand. Jumps stay put. Accepted motion
- * is rate-limited so the pestle swings instead of snapping.
+ * Drive the mill handle toward the hand. A jump does not snap the pestle
+ * across the bowl — it chases at the wrist's top speed. Rejecting those
+ * steps froze the mill the moment a circle got ahead of the handle.
  */
 export function driveCrank(
   state: TurnState,
@@ -99,7 +100,6 @@ export function driveCrank(
   dt: number,
 ): number {
   const step = angleDelta(state.angle, handAngle);
-  if (Math.abs(step) > MAX_TURN_STEP) return 0;
   const cap = MAX_CRANK_RATE * Math.min(0.08, Math.max(0, dt));
   const applied = Math.abs(step) <= cap ? step : Math.sign(step) * cap;
   state.angle += applied;

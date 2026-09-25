@@ -53,6 +53,19 @@ export function tampSetOpen(
 }
 
 /**
+ * Only the tamp stage owns this lock. Grind stores radians in `amount`;
+ * treating 0..3 as "a tamp set" froze the mill after the first twitch.
+ */
+export function tampBusyOnStage(
+  kind: string,
+  tamping: boolean,
+  amount: number,
+  goal: number,
+): boolean {
+  return kind === "tamp" && tampSetOpen(tamping, amount, goal);
+}
+
+/**
  * One strike. The last hit of a set (strike >= 2) winds higher and hits
  * harder, so the third press is the one that lands.
  */
