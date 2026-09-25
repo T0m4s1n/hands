@@ -16,6 +16,6 @@ test("mean luma ignores the alpha channel", () => {
 test("detectSize never upscales and keeps the aspect", () => {
   assert.deepEqual(detectSize(640, 480), { width: 640, height: 480 });
   const sized = detectSize(1920, 1080);
-  assert.equal(sized.width, 960);
-  assert.equal(sized.height, 540);
+  assert.equal(sized.width, 640);
+  assert.equal(sized.height, 360);
 });

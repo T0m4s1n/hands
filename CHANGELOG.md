@@ -11,6 +11,12 @@ sirve de nada dentro de seis meses.
 
 ## Sin publicar
 
+### El seguimiento no congela la página
+
+- MediaPipe corre **unas 20–36 veces por segundo** y se afloja
+  solo si un frame tarda. El guante sigue a 60 por interpolación.
+  Inferir a 60/72 en el hilo principal dejaba la página sin aire.
+
 ### La mano derecha ya no se lee como izquierda
 
 - El lado sale del **esqueleto y de MediaPipe**, no de en qué

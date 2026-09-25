@@ -8,7 +8,8 @@
  * run inference.
  */
 
-export const DETECT_MAX_EDGE = 960;
+/** Working size for inference. 640 is enough for the bones and cheap to run. */
+export const DETECT_MAX_EDGE = 640;
 
 /** Cached CSS filter while we re-sample luma every few hundred milliseconds. */
 export type LightingState = {
@@ -68,7 +69,7 @@ function makeFrame(): DetectFrame {
   probe.height = 45;
   return {
     canvas,
-    ctx: canvas.getContext("2d", { willReadFrequently: true }),
+    ctx: canvas.getContext("2d", { alpha: false, desynchronized: true }),
     probe,
     probeCtx: probe.getContext("2d", { willReadFrequently: true }),
     lighting: { filter: "contrast(1.06)", nextSampleAt: 0, mean: 128 },
