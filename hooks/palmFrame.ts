@@ -99,7 +99,7 @@ export function palmFrame(
  * in and out. Anything that wants to be compared against the posed glove has
  * to be measured in the same units, which is what `lockSpan` is for.
  */
-export const LOCKED_SPAN = 0.85;
+export const LOCKED_SPAN = 0.68;
 
 /**
  * Rescales a landmark cloud about its wrist so the wrist-to-middle-knuckle
@@ -114,8 +114,13 @@ export const LOCKED_SPAN = 0.85;
 export function lockSpan(points: Vector3[], scratch: Vector3): void {
   if (points.length < 10) return;
   scratch.copy(points[0]);
-  const measured = Math.max(points[0].distanceTo(points[9]), 1e-5);
-  const fit = LOCKED_SPAN / measured;
+  const measured = points[0].distanceTo(points[9]);
+  // An edge-on or partially detected palm can collapse this span almost to
+  // zero. Scaling that frame to full size turns tiny landmark noise into a
+  // hand covering the whole table. Keep the small frame for one inference;
+  // temporal smoothing bridges it until MediaPipe recovers.
+  if (measured < 0.12) return;
+  const fit = Math.min(2.4, LOCKED_SPAN / measured);
   for (const point of points) {
     point.sub(scratch).multiplyScalar(fit).add(scratch);
   }
@@ -140,4 +145,85 @@ export function deepen(points: Vector3[], scale: number): void {
   for (const point of points) {
     point.z = wristZ + (point.z - wristZ) * scale;
   }
+}
+
+/**
+ * Turns a landmark cloud half a turn so the back of the hand faces where the
+ * palm did — about an axis lying in the palm (wrist → middle knuckle).
+ *
+ * When that axis is nearly face-on to the camera it collapses and the half
+ * turn becomes a noisy spin in the image plane. In that case fall back to a
+ * house axis: flip through world up so the palm/back swap stays well-defined.
+ */
+export function turnOver(points: Vector3[], scratch: Vector3): void {
+  if (points.length < 10) return;
+  const wrist = points[0];
+  scratch.copy(points[9]).sub(wrist);
+  if (scratch.lengthSq() < 1e-10) scratch.set(0, 1, 0);
+  else scratch.normalize();
+
+  // Face-on: the hand's own up points at the camera and a spin about it does
+  // not turn the palm over. Use world-up instead.
+  if (Math.abs(scratch.z) > 0.85) {
+    scratch.set(0, 1, 0);
+  }
+
+  for (const point of points) {
+    if (point === wrist) continue;
+    const alongX = point.x - wrist.x;
+    const alongY = point.y - wrist.y;
+    const alongZ = point.z - wrist.z;
+    const twice =
+      2 * (alongX * scratch.x + alongY * scratch.y + alongZ * scratch.z);
+    point.set(
+      wrist.x + twice * scratch.x - alongX,
+      wrist.y + twice * scratch.y - alongY,
+      wrist.z + twice * scratch.z - alongZ,
+    );
+  }
+}
+
+export type PoseOptions = {
+  /** Same scale `RobotHand` feeds `deepen`. 1 leaves depth alone. */
+  depthScale: number;
+  /** Same switch as `handView.faceDorsal`. */
+  faceDorsal: boolean;
+};
+
+/**
+ * The three steps every drawing of a landmark cloud has to share.
+ *
+ * Size lock, depth stretch and the dorsal turn used to live only inside the
+ * hand mesh. The debug overlay skipped the last two, so with the default view
+ * the dots sat on the palm while the hand showed the back — the one overlay
+ * meant to tell tracking and drawing apart could not line up with either.
+ */
+export function poseCloud(
+  points: Vector3[],
+  scratch: Vector3,
+  options: PoseOptions,
+): void {
+  lockSpan(points, scratch);
+  deepen(points, options.depthScale);
+  if (options.faceDorsal) turnOver(points, scratch);
+}
+
+/**
+ * Stops the palm plate flipping when the knuckle span collapses.
+ *
+ * Edge-on, `across` is noise and `normal` can invert from one frame to the
+ * next. A 180° flip of a plate is the most visible thing on screen, and it is
+ * not a real turn of the hand. If the new normal points the opposite way of
+ * the last stable one, it is a flip: keep the previous facing.
+ */
+export function keepFacing(frame: Frame, previous: Vector3): void {
+  if (previous.lengthSq() < 1e-8) {
+    previous.copy(frame.normal);
+    return;
+  }
+  if (frame.normal.dot(previous) < 0) {
+    frame.normal.negate();
+    frame.side.negate();
+  }
+  previous.copy(frame.normal);
 }

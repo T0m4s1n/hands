@@ -32,7 +32,8 @@ fotograma "so the game loop can turn it up as a cup fills without re-rendering
 the scene".
 
 **Granos.** La raíz cuadrada del radio "spreads them evenly over the disc instead
-of crowding them into the middle".
+of crowding them into the middle". En reposo no reescribe las matrices: el
+montón no se mueve y nadie lo echa de menos.
 
 **Estallido.** `firedAt` guarda la lectura del reloj; "setting it again replays
 the burst". La trayectoria es "Thrown up and out, then pulled back down: **an

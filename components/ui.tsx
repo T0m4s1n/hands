@@ -80,7 +80,7 @@ export function IconButton({
       type="button"
       aria-label={label}
       title={label}
-      className={`material-thin squircle flex h-11 w-11 items-center justify-center rounded-full text-label-2 transition duration-200 ease-sheet hover:text-label active:scale-95 ${className}`}
+      className={`squircle flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-label-2 ring-1 ring-white/10 transition duration-200 ease-sheet hover:bg-black/55 hover:text-label active:scale-95 ${className}`}
       {...rest}
     >
       {children}
@@ -96,7 +96,7 @@ export function IconButton({
 export function Meter({
   value,
   colour,
-  className = "",
+  className = "h-1.5",
 }: {
   value: number;
   colour: string;
@@ -104,7 +104,7 @@ export function Meter({
 }) {
   return (
     <div
-      className={`h-1.5 overflow-hidden rounded-full bg-fill ${className}`}
+      className={`overflow-hidden rounded-full bg-fill ${className}`}
       role="progressbar"
       aria-valuenow={Math.round(value * 100)}
       aria-valuemin={0}

@@ -1,12 +1,16 @@
 import type { Metadata, Viewport } from "next";
-import { Poppins } from "next/font/google";
+import "@fontsource/poppins/400.css";
+import "@fontsource/poppins/500.css";
+import "@fontsource/poppins/600.css";
+import "@fontsource/poppins/700.css";
+import "@fontsource/poppins/900.css";
 import "./globals.css";
 
-const poppins = Poppins({
-  variable: "--font-poppins",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-});
+/**
+ * Poppins ships inside the app through Fontsource. It never depends on Google
+ * during development, build or runtime, so every screen uses the same family
+ * even when the machine is offline.
+ */
 
 export const metadata: Metadata = {
   title: "Café a mano",
@@ -21,8 +25,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="es" className={`${poppins.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col font-sans">{children}</body>
+    <html lang="es" className="h-full antialiased">
+      <body className="flex min-h-full flex-col font-sans">{children}</body>
     </html>
   );
 }

@@ -18,7 +18,13 @@
 | `mote-drift` | en su sitio | `translate3d(var(--dx), var(--dy), 0) rotate(var(--dr))` | Las motas, 15–26 s |
 | `sway` | `rotate(-1.4deg)` | `rotate(1.4deg)` | Las ramas: 13 s, 17 s y 15 s |
 | `hover-bird` | `rotate(-2.5deg)` | `translate3d(-8px,-15px,0) rotate(2.5deg)` | El colibrí, 4.5 s |
-| `steam-rise` | opacidad 0.35 | `translateY(-5px) scaleY(1.14) skewX(7deg)` | **nadie** |
+| `steam-rise` | opacidad 0.35 | `translateY(-5px) scaleY(1.14) skewX(7deg)` | Vapor de la taza en `CameraGate` |
+| `title-float` | `translateY(0)` | `translateY(-12px)` | El titular del permiso |
+| `cup-sob` | `rotate(-5deg)` | `rotate(5deg)` | La taza cuando llora |
+| `tear-fall` | opacidad 0 | `translateY(40px)`, opacidad 0 | Las lágrimas |
+| `sync-wave` | `rotate(-5deg)` | `rotate(5deg) translateY(-8px)` | La palma mientras espera |
+| `sync-finger` | `rotate(-4deg)` | `rotate(4deg)` | Cada dedo, desfasado |
+| `sync-ring` | `scale(1)`, opacidad 0.2 | `scale(1.1)`, opacidad 0.42 | El halo al trabar |
 
 Los comentarios de cada uno valen por sí solos:
 
@@ -74,9 +80,23 @@ Los `hover` de la portada combinan tres cosas a la vez: elevación
 (`hover:-translate-y-1`), sombra que crece, y una flecha que se desplaza
 (`group-hover:translate-x-1`).
 
+## El iris
+
+`app/globals.css` (`.iris-wipe`) y `components/flow/IrisWipe.tsx`.
+
+Un velo con un agujero (`--iris` + `mask-image`). El radio es `72vmax`
+abierto y `0` cerrado, para que el círculo se vea casi todo el trayecto
+(con porcentaje, el agujero era más grande que la pantalla hasta el
+último instante). El borde es un degradado (`--iris-soft`, `16vmax`) que
+se aprieta a 0 al cerrar. **Cierra** de afuera hacia adentro (880 ms),
+se queda 120 ms en negro, y **abre** de adentro hacia afuera (1040 ms).
+Es la excepción a «sólo transform y opacity»: un iris no se puede hacer
+sin máscara. `Countdown` usa `iris-count-pop` (720 ms) para el 3-2-1:
+llega grande, se queda, se va.
+
 ## Dos cosas anotadas tal como están
 
-1. **`@keyframes steam-rise` está definido dos veces**, idéntico
-   (`:152-162` y `:319-329`), y **no lo usa nadie**. Se escribió para un vaso de
-   café dibujado en SVG que se sustituyó por fotografías recortadas.
+1. **`steam-rise` tiene una sola definición** y la usa el vapor de
+   `CameraGate`. Se escribió para un vaso dibujado que se sustituyó por
+   fotografías; la taza del permiso lo recupera.
 2. **Los dos bloques de `prefers-reduced-motion`** se solapan.

@@ -11,7 +11,7 @@ import {
   TILT_FULL,
   type Point,
 } from "./gestures.ts";
-import { RECIPES, bandScore, grade, placeScore } from "./recipes.ts";
+import { RECIPES, bandScore, grade, placeScore, stars } from "./recipes.ts";
 
 const p = (x: number, y: number): Point => ({ x, y, z: 0 });
 const near = (a: number, b: number, slack = 1e-6) =>
@@ -122,10 +122,18 @@ const near = (a: number, b: number, slack = 1e-6) =>
 
   assert.equal(placeScore(0, 1), 1);
   assert.equal(placeScore(1, 1), 0);
-  near(placeScore(0.25, 1), 0.75);
+  assert.equal(placeScore(0.25, 1), 1, "the well is full marks, not a bullseye");
+  assert.ok(placeScore(0.85, 1) >= 0.8, "the rim still makes the coffee");
 
   assert.equal(grade(1), "Excelente");
   assert.equal(grade(0), "Para tirar");
+  assert.equal(stars(1), 5);
+  assert.equal(stars(0.9), 5);
+  assert.equal(stars(0.75), 4);
+  assert.equal(stars(0.6), 3);
+  assert.equal(stars(0.4), 2);
+  assert.equal(stars(0.2), 1);
+  assert.equal(stars(0), 0);
   console.log("ok  marks fade away from the target rather than snapping");
 }
 
@@ -137,6 +145,7 @@ const near = (a: number, b: number, slack = 1e-6) =>
   assert.equal(ids.size, 3, "recipe ids are unique");
 
   for (const recipe of RECIPES) {
+    assert.ok(recipe.pitch.length > 20, `${recipe.id} has a menu pitch`);
     assert.equal(recipe.stages.length, 5, `${recipe.id} has five stages`);
     for (const stage of recipe.stages) {
       assert.ok(stage.radius > 0, `${recipe.id}/${stage.id} has a target ring`);

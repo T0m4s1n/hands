@@ -1,6 +1,6 @@
 # La mano
 
-`components/RobotHand.tsx` (~440 líneas).
+`components/RobotHand.tsx` (~500 líneas) y `components/handToon.ts`.
 
 ## Qué la sustituyó, y por qué
 
@@ -77,16 +77,39 @@ tapado.
 les obliga a conservarla. Es exactamente el hecho contra el que peleaban las
 cuatrocientas líneas de IK, y aceptarlo es lo que compra todo lo de arriba.
 
+## El dorso hacia el jugador
+
+Una webcam ve el lado que le apuntes, y lo que la gente apunta a una cámara es
+la **palma**. Dibujarla fielmente da una mano correcta que se lee como la de
+otra persona: al alcanzar algo sobre una mesa uno ve el dorso de sus manos.
+
+`turnOver()` le da **media vuelta sobre el eje de la propia mano**, y la palabra
+importa: es una **rotación, no un espejo**. Espejar mostraría el dorso igual de
+bien y convertiría de paso una mano izquierda en una derecha — el fallo contra
+el que peleó mil líneas el rig viejo. Girar conserva la quiralidad y **pasa el
+pulgar al otro lado**, que es exactamente lo que hace tu propia mano al darle la
+vuelta.
+
+Para un eje unitario `u`, esa rotación es `2(v·u)u − v`, así que no necesita
+base ni matriz.
+
+Lo controla `handView.faceDorsal`, activo por defecto, con interruptor en
+`/manos`.
+
 ## El aspecto
 
 No puede parecer carne, así que no lo intenta: una mano de dibujos, con
 falanges gruesas y rótulas gordas.
 
-**Sombreado cel.** Todo usa `meshToonMaterial` contra una rampa de **cuatro
-escalones planos** en vez de un degradado suave. Es lo que lo convierte en un
-dibujo en vez de un render. El precio: el sombreado toon no tiene metalness ni
-reflejos, así que el latón deja de ser metal literal y pasa a ser *el color con
-el que se dibuja el oro* — que para una caricatura es el cambio correcto.
+**Sombreado cel.** Un shader propio (`components/handToon.ts`), no
+`meshToonMaterial`. El toon de three muestrea su rampa contra la irradiancia
+acumulada; el foco de la sala es intensidad 190 para que el metal del café
+haga bloom, y ese mismo número clava cada muestra en el último texel de una
+rampa de cuatro escalones. La mano se leía como pintura plana. El shader usa
+half-Lambert contra la dirección de la cámara, que vive en 0..1 pase lo que
+pase en la sala, así que los escalones siguen siendo escalones. La rampa es
+`NoColorSpace`: tratarla como sRGB le aplica gamma a los peldaños y el
+bandeado desaparece.
 
 Los colores van **pitados de brillo** a propósito (`#fbf0d9`, `#f2ab2c`): la
 rampa escalona todo hacia el extremo oscuro, así que un color elegido para verse
@@ -95,7 +118,7 @@ bien plano sale embarrado una vez sobre ella.
 | Pieza | Forma |
 | --- | --- |
 | Falanges | Cilindro apenas cónico, gordo |
-| Articulaciones | Esferas grandes, que además rematan los cilindros |
+| Articulaciones | Esferas que rematan los cilindros y marcan el nudillo |
 | Placa de palma | `RoundedBox` medida de la mano que tiene delante |
 | Puño | Un tono por mano: `Left #d98c3c`, `Right #7a3b1e` |
 
@@ -103,6 +126,18 @@ Una cápsula sería la forma obvia para un hueso **y es la equivocada**: escalar
 a la longitud del hueso estira sus tapas en huevos. Un cilindro se escala
 limpio, y las esferas de las articulaciones sobresalen por los dos extremos, lo
 que lo redondea gratis.
+
+### Dos ajustes que costó acertar
+
+**El grosor del hueso sale del extremo más grueso, no del más fino.** Tomando el
+más fino, cada hueso quedaba más estrecho que el nudillo de encima, así que cada
+articulación destacaba como una bola en un palo — un racimo de uvas en vez de un
+dedo. Un nudillo debe ser un bulto en una salchicha.
+
+**Las articulaciones son otro tono del mismo color, no otro color.** En oro
+saturado sobre crema se leían como cuentas ensartadas en un hilo blanco, y en
+movimiento las cuentas era lo único que se veía: la mano se convertía en una
+pulsera.
 
 Los grosores están escritos a mano por landmark (`JOINT_SIZE`) y no derivados,
 porque una mano no es uniforme: los nudillos son más anchos que los huesos que
@@ -127,9 +162,13 @@ siempre del lado de la yema.
   crece y mengua con la distancia a la cámara, y seguirlo hacía latir la mano.
 - **`REST_POSE`**, para el sustituto de ratón. Pasa por el mismo `lockSpan` que
   una mano seguida, así que las dos miden igual por construcción.
-- **`deepen`** y **`palmFrame`**, este último con un papel mucho menor: orienta la placa y el puño.
-  Si el ruido de profundidad lo agita, se agitan **una placa y un puño**. Antes
-  orientaba la mano entera.
+- **`poseCloud`**, **`deepen`** y **`palmFrame`**. `poseCloud` es el candado de
+  tamaño, el estirado de profundidad y la media vuelta dorsal **en este orden**,
+  y lo corren la mano y los puntos de `/manos` para que un desacuerdo sea
+  real. `palmFrame` orienta la placa y el puño; si el ruido de profundidad lo
+  agita, se agitan **una placa y un puño**. Antes orientaba la mano entera.
+  `keepFacing` evita que la placa dé media vuelta cuando el palmo entre
+  nudillos se colapsa de canto.
 
 ## Lo que murió con el rig
 

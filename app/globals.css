@@ -8,14 +8,12 @@
  * scene, never a wall in front of it.
  */
 
-@theme {
-  --font-sans:
-    var(--font-roboto), -apple-system, BlinkMacSystemFont, "Segoe UI",
-    system-ui, sans-serif;
-  --font-mono:
-    ui-monospace, "SF Mono", SFMono-Regular, Menlo, var(--font-geist-mono),
-    monospace;
+@theme inline {
+  --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Poppins", ui-sans-serif, system-ui, sans-serif;
+}
 
+@theme {
   /*
    * The colours of La Mejor Taza, Nariño: a deep wine red carrying almost
    * everything, warm cream for anything that has to be read at length, amber
@@ -86,13 +84,26 @@ body {
   height: 100%;
 }
 
+html {
+  font-family: "Poppins", ui-sans-serif, system-ui, sans-serif;
+}
+
 body {
   background: var(--color-canvas);
   color: var(--color-label);
-  font-family: var(--font-sans);
+  font-family: inherit;
   /* Apple's optical sizing on large text depends on these being on. */
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea,
+pre,
+code {
+  font-family: inherit;
 }
 
 /*
@@ -161,9 +172,42 @@ body {
   }
 }
 
+/* The carta cups settle and lift a little, like heat under porcelain. */
+@keyframes recipe-cup {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -10px, 0);
+  }
+}
+
+/* Landing only — drop shadow lives here so the game HUD never inherits it. */
+.portada-cup {
+  filter: drop-shadow(0 16px 18px rgb(0 0 0 / 0.42));
+  animation: recipe-cup 6.4s ease-in-out infinite;
+}
+
+.portada-figure {
+  filter: drop-shadow(0 28px 36px rgb(20 2 5 / 0.42));
+}
+
+/* The hero wash behind each drink drifts so the strip never feels frozen. */
+@keyframes recipe-wash {
+  0%,
+  100% {
+    transform: scale(1.05) translate3d(0, 0, 0);
+  }
+  50% {
+    transform: scale(1.1) translate3d(-1.5%, -1%, 0);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   [style*="animation"],
-  .grain::after {
+  .grain::after,
+  .portada-cup {
     animation: none !important;
   }
 }
@@ -249,7 +293,7 @@ body {
   .t-title {
     font-size: 1.5rem;
     line-height: 1.2;
-    font-weight: 650;
+    font-weight: 600;
     letter-spacing: -0.019em;
   }
   .t-headline {
@@ -315,25 +359,742 @@ input[type="range"] {
   accent-color: var(--color-tint);
 }
 
-/* Steam leans and thins as it goes, rather than sliding straight up. */
-@keyframes steam-rise {
+@keyframes title-float {
   0%,
   100% {
-    transform: translateY(0) scaleY(1) skewX(0deg);
-    opacity: 0.35;
+    transform: translateY(0);
   }
   50% {
-    transform: translateY(-5px) scaleY(1.14) skewX(7deg);
-    opacity: 0.85;
+    transform: translateY(-12px);
   }
 }
 
+@keyframes cup-sob {
+  0%,
+  100% {
+    transform: rotate(-5deg) translateY(0);
+  }
+  50% {
+    transform: rotate(5deg) translateY(3px);
+  }
+}
+
+@keyframes tear-fall {
+  0% {
+    transform: translateY(0) scale(0.55);
+    opacity: 0;
+  }
+  14% {
+    opacity: 0.95;
+  }
+  100% {
+    transform: translateY(40px) scale(1);
+    opacity: 0;
+  }
+}
+
+.gate-veil {
+  background: radial-gradient(
+    ellipse 72% 58% at 50% 40%,
+    rgb(26 4 8 / 0.16),
+    rgb(16 2 5 / 0.78) 78%
+  );
+}
+
+.gate-title {
+  font-size: clamp(2.75rem, min(9vw, 12vh), 6.25rem);
+  line-height: 0.9;
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  animation: title-float 5.6s ease-in-out infinite;
+}
+
+.gate-cup-sob {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: cup-sob 2.4s ease-in-out infinite;
+}
+
+.gate-steam {
+  animation: steam-rise 2.8s ease-in-out infinite;
+}
+
+.gate-tear {
+  animation: tear-fall 1.85s ease-in infinite;
+}
+
+.gate-tear-b {
+  animation-delay: -0.92s;
+}
+
+.sync-hand-wait {
+  color: #d4c4ae;
+}
+.sync-hand-seen {
+  color: #f0e8d9;
+}
+.sync-hand-lock {
+  color: #f5990a;
+}
+
+.sync-wave {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: sync-wave 2.8s ease-in-out infinite;
+}
+.sync-hand-lock .sync-wave {
+  animation: none;
+}
+
+.sync-finger {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: sync-finger 2.1s ease-in-out infinite;
+}
+.sync-hand-seen .sync-finger {
+  animation-duration: 1.15s;
+}
+.sync-hand-lock .sync-finger {
+  animation: none;
+}
+
+.sync-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sync-ring 1.7s ease-in-out infinite;
+}
+
+@keyframes sync-wave {
+  0%,
+  100% {
+    transform: rotate(-5deg) translateY(0);
+  }
+  50% {
+    transform: rotate(5deg) translateY(-8px);
+  }
+}
+
+@keyframes sync-finger {
+  0%,
+  100% {
+    transform: rotate(-4deg);
+  }
+  50% {
+    transform: rotate(4deg);
+  }
+}
+
+@keyframes sync-ring {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.2;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.42;
+  }
+}
+
+/*
+ * Classic camera iris: a hole in the veil, not a blob growing from the
+ * centre. --iris is the hole radius. @property lets it interpolate so the
+ * close (outside in) and the open (inside out) stay smooth. Reduced motion
+ * still collapses the duration below.
+ */
+@property --iris {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 72vmax;
+}
+
+@property --iris-soft {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 16vmax;
+}
+
+@keyframes iris-count-pop {
+  0% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+  18% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  78% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.84);
+    opacity: 0;
+  }
+}
+
+.iris-wipe {
+  --iris: 72vmax;
+  --iris-soft: 16vmax;
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  background: #140308;
+  -webkit-mask-image: radial-gradient(
+    circle at 50% 50%,
+    transparent 0,
+    transparent var(--iris),
+    #fff calc(var(--iris) + var(--iris-soft))
+  );
+  mask-image: radial-gradient(
+    circle at 50% 50%,
+    transparent 0,
+    transparent var(--iris),
+    #fff calc(var(--iris) + var(--iris-soft))
+  );
+  transition:
+    --iris 1040ms cubic-bezier(0.42, 0, 0.58, 1),
+    --iris-soft 1040ms cubic-bezier(0.42, 0, 0.58, 1);
+}
+.iris-wipe-shut {
+  --iris: 0px;
+  --iris-soft: 0px;
+  transition-duration: 880ms;
+  transition-timing-function: cubic-bezier(0.42, 0, 0.58, 1);
+}
+
+/* Recipe menu — CSS focus + compositor-friendly fingertip. */
+@keyframes menu-finger-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.14);
+    opacity: 1;
+  }
+}
+
+@keyframes recipe-menu-in {
+  from {
+    opacity: 0.01;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.menu-finger {
+  will-change: transform, opacity;
+  transition: opacity 120ms var(--ease-sheet);
+}
+
+.menu-finger-ring {
+  animation: menu-finger-pulse 1.6s ease-in-out infinite;
+}
+
+.menu-finger[data-grabbing="1"] .menu-finger-ring {
+  border-color: #fff6ea;
+  animation-duration: 0.55s;
+}
+
+.menu-charge {
+  transform-origin: left center;
+  will-change: transform;
+}
+
+.recipe-menu-ui {
+  /* Enter motion without leaving opacity at 0 if the animation is cut short. */
+  opacity: 1;
+  animation: recipe-menu-in 480ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.recipe-hero {
+  opacity: 0;
+  transition: opacity 280ms var(--ease-sheet);
+  will-change: opacity;
+}
+
+/* Defensive: if data-focus is missing, still show the first hero (never a blank carta). */
+.recipe-menu:not([data-focus]) .recipe-hero[data-i="0"],
+.recipe-menu[data-focus="0"] .recipe-hero[data-i="0"],
+.recipe-menu[data-focus="1"] .recipe-hero[data-i="1"],
+.recipe-menu[data-focus="2"] .recipe-hero[data-i="2"] {
+  opacity: 1;
+}
+
+.recipe-name {
+  font-size: clamp(2.35rem, 6.2vw, 4.5rem);
+  transform: scale(0.72);
+  transform-origin: left center;
+  color: rgb(255 255 255 / 0.38);
+  transition:
+    transform 200ms var(--ease-sheet),
+    color 200ms var(--ease-sheet);
+  will-change: transform;
+}
+
+.recipe-opt[data-on] .recipe-name {
+  transform: scale(1);
+  color: var(--color-cream);
+  text-shadow: 0 2px 24px rgb(0 0 0 / 0.35);
+}
+
+.recipe-num {
+  color: rgb(255 250 244 / 0.3);
+  transition: color 180ms var(--ease-sheet);
+}
+
+.recipe-opt[data-on] .recipe-num {
+  color: var(--color-tint);
+}
+
+.recipe-blurb {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    opacity 200ms var(--ease-sheet),
+    max-height 200ms var(--ease-sheet);
+}
+
+.recipe-opt[data-on] .recipe-blurb {
+  max-height: 5.5rem;
+  opacity: 1;
+}
+
+.recipe-track {
+  opacity: 0;
+  transition: opacity 180ms var(--ease-sheet);
+}
+
+.recipe-opt[data-on] .recipe-track {
+  opacity: 1;
+}
+
+.recipe-detail {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px);
+  transition:
+    opacity 240ms var(--ease-sheet),
+    transform 240ms var(--ease-sheet);
+}
+
+.recipe-menu[data-focus="0"] .recipe-detail[data-i="0"],
+.recipe-menu[data-focus="1"] .recipe-detail[data-i="1"],
+.recipe-menu[data-focus="2"] .recipe-detail[data-i="2"] {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+@media (hover: hover) {
+  .recipe-opt:not([data-on]):hover .recipe-name {
+    color: rgb(255 255 255 / 0.62);
+  }
+}
+
+.count-pop {
+  animation: iris-count-pop 720ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.live-cup {
+  width: 4.5rem;
+  height: 5.25rem;
+  filter: drop-shadow(0 8px 18px rgb(0 0 0 / 0.45));
+  transition: transform 280ms var(--ease-sheet);
+}
+
+.live-cup-hold {
+  transform: translateY(-4px) scale(1.04);
+}
+
+.live-cup-hurry {
+  animation: live-cup-shake 0.45s ease-in-out infinite;
+}
+
+@keyframes live-cup-shake {
+  0%,
+  100% {
+    transform: rotate(-2deg);
+  }
+  50% {
+    transform: rotate(2deg);
+  }
+}
+
+@keyframes live-cup-wisp {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 0.7;
+    transform: translateY(-4px);
+  }
+}
+
+.live-cup-wisp {
+  animation: live-cup-wisp 1.6s ease-in-out infinite;
+}
+
+@keyframes live-cup-slosh {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(2px);
+  }
+}
+
+.live-cup-slosh {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: live-cup-slosh 0.7s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  .live-cup-hurry,
+  .live-cup-wisp,
+  .live-cup-slosh {
+    animation: none !important;
+  }
+}
+
+/* Readable floating type over the lit stage — use these instead of inline shadows. */
+.text-float {
+  text-shadow:
+    0 2px 24px rgb(0 0 0 / 0.75),
+    0 0 1px rgb(0 0 0 / 0.9);
+}
+
+.text-hero {
+  text-shadow:
+    0 2px 0 rgb(0 0 0 / 0.65),
+    0 8px 0 color-mix(in srgb, var(--color-wine) 75%, black),
+    0 18px 36px rgb(0 0 0 / 0.55);
+}
+
+.text-hero-sm {
+  text-shadow:
+    0 3px 0 rgb(0 0 0 / 0.5),
+    0 8px 0 color-mix(in srgb, var(--color-wine) 60%, black);
+}
+
+.menu-finger-parked {
+  opacity: 0;
+  transform: translate3d(-100px, -100px, 0);
+}
+
+.delay-160 {
+  animation-delay: 160ms;
+}
+
+/* ---------- Briefing theater: floating acts + comic gesture loop ---------- */
+
+@keyframes brief-float-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes brief-act-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes brief-chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes brief-stage-in {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Scoop path: rest near hand → lift into pinch → arc to ring → settle → reset */
+@keyframes brief-scoop-path {
+  0%,
+  8% {
+    transform: translate(118px, 108px) scale(1);
+    opacity: 1;
+  }
+  18% {
+    transform: translate(108px, 92px) scale(1.05);
+  }
+  28%,
+  36% {
+    transform: translate(102px, 86px) scale(0.92);
+  }
+  58% {
+    transform: translate(232px, 126px) scale(1);
+  }
+  68%,
+  78% {
+    transform: translate(248px, 142px) scale(0.86);
+    opacity: 1;
+  }
+  88%,
+  100% {
+    transform: translate(248px, 142px) scale(0.68);
+    opacity: 0;
+  }
+}
+
+@keyframes brief-thumb-pinch {
+  0%,
+  12% {
+    transform: rotate(-32deg) translate(0, 0);
+  }
+  22%,
+  36% {
+    transform: rotate(-14deg) translate(8px, -10px);
+  }
+  50%,
+  100% {
+    transform: rotate(-32deg) translate(0, 0);
+  }
+}
+
+@keyframes brief-index-pinch {
+  0%,
+  12% {
+    transform: translate(0, 0);
+  }
+  22%,
+  36% {
+    transform: translate(-6px, 12px);
+  }
+  50%,
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+@keyframes brief-hand-carry {
+  0%,
+  28% {
+    transform: translate(0, 0);
+    opacity: 1;
+  }
+  58% {
+    transform: translate(108px, 6px);
+    opacity: 1;
+  }
+  72%,
+  100% {
+    transform: translate(108px, 6px);
+    opacity: 0.3;
+  }
+}
+
+@keyframes brief-ring-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.72;
+  }
+}
+
+@keyframes brief-spark-pop {
+  0%,
+  18% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  24% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  34% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  42%,
+  100% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+}
+
+@keyframes brief-once-ring {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+}
+
+.brief-float {
+  animation: brief-float-in 480ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.brief-act {
+  animation: brief-act-in 560ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.brief-chip {
+  animation: brief-chip-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* No base opacity:0 — if the entrance animation is skipped, steps stay readable. */
+.brief-stage {
+  animation: brief-stage-in 480ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.brief-scoop {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: brief-scoop-path 4.4s cubic-bezier(0.4, 0.1, 0.3, 1) infinite;
+}
+
+.brief-hand {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: brief-hand-carry 4.4s cubic-bezier(0.4, 0.1, 0.3, 1) infinite;
+}
+
+.brief-thumb {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: brief-thumb-pinch 4.4s cubic-bezier(0.4, 0.1, 0.3, 1) infinite;
+}
+
+.brief-index {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: brief-index-pinch 4.4s cubic-bezier(0.4, 0.1, 0.3, 1) infinite;
+}
+
+.brief-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: brief-ring-pulse 1.8s ease-in-out infinite;
+}
+
+.brief-spark {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: brief-spark-pop 4.4s ease-out infinite;
+}
+
+.brief-once-ring {
+  animation: brief-once-ring 1.6s ease-in-out infinite;
+}
+
+/* Stage HUD — pop the title when the stage changes; pulse the current step. */
+@keyframes hud-stage-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hud-step-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+.hud-stage {
+  animation: hud-stage-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.hud-step-here {
+  animation: hud-step-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes result-bar-in {
+  from {
+    transform: scaleX(0.12);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.result-bar > div {
+  transform-origin: left center;
+  animation: result-bar-in 720ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.result-ticket {
+  transform: rotate(1.25deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Keep content visible — do not leave enter animations stuck at opacity 0. */
+  .recipe-menu-ui,
+  .brief-float,
+  .brief-act,
+  .brief-stage,
+  .brief-chip,
+  .hud-stage,
+  .count-pop,
+  .gate-title {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .menu-finger-ring,
+  .brief-scoop,
+  .brief-hand,
+  .brief-thumb,
+  .brief-index,
+  .brief-ring,
+  .brief-spark,
+  .brief-once-ring,
+  .hud-step-here,
+  .gate-cup-sob,
+  .result-bar > div {
+    animation: none !important;
   }
 }

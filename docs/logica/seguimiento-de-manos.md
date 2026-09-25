@@ -5,11 +5,11 @@ MediaPipe y del bucle por fotograma.
 
 ## La cámara no se pide aquí
 
-`getUserMedia` vive en `components/EnableCameraButton.tsx:35-48`, y pide de
-forma deliberadamente redundante: `{video: true}`, `{video: {}}` y una petición
-por cada dispositivo enumerado, **las tres a la vez**. `keepFirstStream`
-(`:51-64`) resuelve con `Promise.any`, para los tracks de las perdedoras y
-quita el audio de la ganadora.
+`getUserMedia` vive en `hooks/requestCamera.ts`. Pide de forma deliberadamente
+redundante: `{video: true}`, `{video: {}}` y una petición por cada dispositivo
+enumerado, **las tres a la vez**. `keepFirstStream` resuelve con `Promise.any`,
+para los tracks de las perdedoras y quita el audio de la ganadora. En `/jugar`
+lo llama `CameraGate` al montar; en `/manos`, el clic de `EnableCameraButton`.
 
 Los errores se traducen por estado del dispositivo (`:19-33`):
 `NotAllowedError`, `NotReadableError`/`AbortError`,
@@ -23,19 +23,23 @@ El `MediaStream` resultante se entrega a `useHandTracking().start(stream)`.
 
 ```
 WASM_URL   https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm
-MODEL_URL  https://storage.googleapis.com/mediapipe-models/hand_landmarker/
-           hand_landmarker/float16/1/hand_landmarker.task
 MODULE_URL https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs
+MODELOS    float32/1 → float16/latest → float16/1
 ```
+
+El fotograma se prepara en `handFrame.ts` (espejo, 960 px, filtro de luz)
+y los esqueletos rotos se tiran en `handQuality.ts`.
 
 `loadMediaPipe()` (`:160-165`) importa el módulo con
 `new Function("url", "return import(url)")` — un import dinámico que el bundler
 no puede ver ni reescribir.
 
-Opciones del landmarker (`:380-391`): `runningMode: "VIDEO"`, `numHands: 2`,
-`minHandDetectionConfidence: 0.55`, `minHandPresenceConfidence: 0.5`,
-`minTrackingConfidence: 0.5`. Se intenta el delegado `"GPU"` y se cae a `"CPU"`
-ante cualquier excepción (`:393-398`).
+Opciones del landmarker: `runningMode: "VIDEO"`, `numHands: 4` (candidatos),
+luego `selectPersonHands` deja **como máximo dos** y de **una sola persona**.
+`minHandDetectionConfidence: 0.32`, `minHandPresenceConfidence: 0.55`,
+`minTrackingConfidence: 0.5` — si la presencia baja, se vuelve a buscar la
+palma en vez de arrastrar la caja anterior. Se intenta cada modelo en GPU
+y se cae a CPU.
 
 **Invalidación de sesión por contador**: `stop()` incrementa
 `sessionRef.current`, y cada frontera `await` vuelve a comprobar `stillActive()`
@@ -68,7 +72,11 @@ detector ya asume un cuadro tipo selfie.
 
 ## De landmark a mundo
 
-`landmarkToWorld(lm)` (`:208-220`):
+`screenFromHand(hand)` convierte una mano a 0..1 sobre la pantalla, para
+los menús. Si hay landmarks, usa la yema del índice; si es el ratón,
+deshace `landmarkToWorld` con las mismas constantes.
+
+`landmarkToWorld(lm)` (`:226-238`):
 
 ```
 x = (lm.x - 0.5) * WORLD_X                             WORLD_X = 7

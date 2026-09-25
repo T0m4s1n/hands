@@ -1,6 +1,6 @@
 # La portada
 
-`app/page.tsx` (436 líneas). Ruta `/`.
+`app/page.tsx`. Ruta `/`.
 
 ## Para qué existe
 
@@ -26,10 +26,14 @@ Cuatro `Field` en orden (ver [campos-y-secciones.md](campos-y-secciones.md)):
 | 3 | `forest` | `roll` | Los cuatro gestos y el aviso de cámara |
 | 4 | `deep` | `hill` | Créditos y navegación |
 
-La columna de contenido es siempre
-`relative mx-auto w-full max-w-3xl px-6 sm:px-8`.
+La columna del héroe y de la carta se ensancha a `max-w-6xl` / `max-w-5xl`
+para dejar sitio a la figura y a las tazas. Gestos y pie siguen en
+`max-w-3xl` / `max-w-5xl`.
 
 ## El héroe
+
+La primera vista es **una pantalla completa** (`min-h-dvh`): promesa a la
+izquierda, figura a la derecha, tres tazas recortadas como objetos.
 
 - Resplandor: `radial-gradient(58% 48% at 50% 4%, rgba(190,44,58,0.85), transparent 72%)`
   — "The lit pool the brand puts behind its logo, **breathing so the field is
@@ -40,7 +44,9 @@ La columna de contenido es siempre
 - Filete dorado bajo la cabecera: "The thin gold rule the brand runs under its
   masthead."
 - Pastilla ámbar: «MINIJUEGO DE BARISTA».
-- Titular en `font-black`, `leading-[0.98]`.
+- Titular: «Prepara café con las manos.»
+- Figura: `/art/personaje-taza.png` a la derecha, a tamaño natural del
+  hueco. Las tres tazas no flotan sobre ella: viven en la carta.
 - Llamada a la acción: un `Link`, **no el componente `Button`**, con
   `min-h-[3.25rem]` y una flecha que se desplaza al pasar el ratón.
 - Escape: «Se puede jugar con ratón si no quieres dar la cámara.»

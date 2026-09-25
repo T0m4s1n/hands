@@ -17,14 +17,30 @@ import {
 } from "@/components/coffee/anim";
 import {
   Beans,
+  BeanSpill,
   Burst,
+  GroundDust,
+  LatteArt,
+  PourImpact,
   PourStream,
   Spill,
   Steam,
 } from "@/components/coffee/effects";
 import { crowdMood } from "@/components/coffee/crowd";
 import { KIT } from "@/components/coffee/kit";
-import { LIQUIDS, type LiquidKind } from "@/components/coffee/liquid";
+import {
+  LIQUIDS,
+  pour,
+  type LiquidKind,
+} from "@/components/coffee/liquid";
+import {
+  canCommitRelease,
+  releaseReason,
+} from "@/components/coffee/interactionState";
+import {
+  finishSettlement,
+  requestSettlement,
+} from "@/components/coffee/settlement";
 import {
   calmSlosh,
   createSlosh,
@@ -51,13 +67,37 @@ import {
   type TurnState,
 } from "@/components/coffee/gestures";
 import {
+  writeGloveHold,
+  type GloveHold,
+} from "@/components/coffee/gloveGrip";
+import {
   bandScore,
-  placeScore,
-  type PropKind,
   type Recipe,
   type Stage,
 } from "@/components/coffee/recipes";
+import {
+  overStation,
+  stageStation,
+  stationQuality,
+} from "@/components/coffee/station";
+import {
+  DRIPPER,
+  GROUP,
+  brewAt,
+  dripperVessel,
+  usesDripper,
+  usesGroup,
+} from "@/components/coffee/leftover";
+import {
+  DUMP_DWELL,
+  dumpAmount,
+  dumpMouth,
+  dumpReleases,
+  scoopDumpPose,
+} from "@/components/coffee/beanDump";
+import { destinationOf } from "@/components/flow/playCopy";
 import { CRANK_ARM, CREMA, GROUNDS, Level, Prop } from "@/components/coffee/props";
+import { playSfx, setWorkLoop, type WorkLoop } from "@/lib/audio";
 
 export type StageStatus = {
   index: number;
@@ -76,11 +116,13 @@ export type StageStatus = {
   marks: readonly number[];
   /** The stage is about to be taken out of their hands. */
   hurry: boolean;
+  /** True while a pour/grind/shake is actively scoring this frame. */
+  working: boolean;
   done: boolean;
 };
 
 /** Reach matches the locked glove size — not the MediaPipe image span. */
-const GRAB_RADIUS = 1.15;
+const GRAB_RADIUS = 1.55;
 const REST_Z = 0.12;
 /**
  * The height a carried object rides at when it has nothing to clear.
@@ -96,8 +138,20 @@ const CARRY_LOW = 0.42;
 /**
  * Pouring never drops below this, so what is being filled stays visible
  * underneath instead of being covered by the thing filling it.
+ *
+ * Raised once the stream stopped being a line of beads and became a tube.
+ * At the old height the spout sat almost on the brewer's rim and the pour had
+ * nothing to fall through, which on screen is a smear between two objects. A
+ * pour nobody can see teaches nobody how to pour, and this is the one stage
+ * whose whole lesson is in the stream.
+ *
+ * Note this is a floor and not the height itself: `carryOver` already lifts a
+ * carried thing clear of whatever it is over, and for the brewer that lands
+ * near 1.6 on its own. Raising this from 1.15 to 1.7 therefore bought about
+ * nine hundredths of a unit and looked identical — the number has to clear
+ * what the collision rule was already doing before it changes anything.
  */
-const POUR_LIFT_Z = 1.15;
+const POUR_LIFT_Z = 2.35;
 const RING_Z = 0.05;
 const CRANK_Z = 0.95;
 const PUBLISH_INTERVAL = 0.08;
@@ -134,17 +188,6 @@ const OVERFLOW_GRACE = 1.4;
 const IDLE = new Color("#efdcbd");
 const READY = new Color("#ffb03a");
 
-/** Where liquid stands inside each vessel: how wide, how deep, how high up. */
-const VESSELS: Partial<
-  Record<PropKind, { radius: number; base: number; height: number }>
-> = {
-  mug: { radius: 0.34, base: 0.1, height: 0.42 },
-  cup: { radius: 0.32, base: 0.12, height: 0.3 },
-  brewer: { radius: 0.3, base: 0.1, height: 1.05 },
-  machine: { radius: 0.34, base: 0.1, height: 0.42 },
-  saucer: { radius: 0.4, base: 0.1, height: 0.3 },
-};
-
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 
 function createGameState(recipe: Recipe, round: number) {
@@ -160,13 +203,19 @@ function createGameState(recipe: Recipe, round: number) {
     elapsed: 0,
     /** Whether its object has been picked up yet, which starts the short clock. */
     touched: false,
-    /** The scored amount, in whatever this stage measures. */
+    /** Gesture amount for non-liquid stages. Liquid lives only in volumes. */
     amount: 0,
+    /** Source of truth for liquid visuals, HUD and scoring. */
+    sourceVolume: 1.2,
+    destinationVolume: 0,
     /** Pestle angle round the mortar, and how far it has been turned. */
     angle: 0,
     turn: null as TurnState | null,
     /** Back-and-forth counter, for shaking and pressing. */
     stroke: null as StrokeState | null,
+    /** Side-to-side wiggles while pouring a heart. */
+    flourish: 0,
+    artStroke: null as StrokeState | null,
     /** How the palm sat when the object was picked up, and the roll since. */
     grabAngle: 0,
     tilt: 0,
@@ -174,10 +223,20 @@ function createGameState(recipe: Recipe, round: number) {
     holder: null as Handedness | null,
     near: false,
     wasGrabbing: { Left: false, Right: false } as Record<Handedness, boolean>,
+    /** Scoop / filter still shows its heap until a successful dump. */
+    cargoLoaded: true,
+    spillAt: -99,
+    dumping: false,
+    dumpElapsed: 0,
+    dumpDwell: 0,
+    dumpMark: 0,
     pos: new Vector3(first.item[0], first.item[1], REST_Z),
     done: false,
     publishAt: -1,
     changed: true,
+    lifecycle: "active" as "active" | "settling",
+    settleUntil: -1,
+    pendingMark: 0,
 
     // ---- how it all moves ----
     /** Height off the table, sprung so picking up snaps and putting down lands. */
@@ -197,6 +256,7 @@ function createGameState(recipe: Recipe, round: number) {
     /** How much has gone over the rim, and how long it has been going over. */
     spilled: 0,
     overflowing: 0,
+    wasPouring: false,
 
     /** Reused when working out what the held object would be set down on. */
     supports: [
@@ -231,9 +291,14 @@ function flatDistance(ax: number, ay: number, bx: number, by: number): number {
 }
 
 /** Closest tabletop distance from the object to any grab probe on the hand. */
+function hasCargoDump(stage: Stage): boolean {
+  return stage.kind === "place" && Boolean(KIT[stage.holds]?.cargo);
+}
+
 function handObjectDistance(hand: TrackedHand, x: number, y: number): number {
   let best = flatDistance(hand.cursor.x, hand.cursor.y, x, y);
-  for (const point of handGrabPoints(hand.smoothedLandmarks)) {
+  const probes = hand.grabPoints ?? handGrabPoints(hand.smoothedLandmarks);
+  for (const point of probes) {
     best = Math.min(best, flatDistance(point.x, point.y, x, y));
   }
   return best;
@@ -241,14 +306,27 @@ function handObjectDistance(hand: TrackedHand, x: number, y: number): number {
 
 /** The mark this attempt stands at right now, which is also the ring's colour. */
 function currentQuality(stage: Stage, game: GameState): number {
-  if (stage.band) return bandScore(game.amount, stage.band);
+  if (stage.band) {
+    const fill = bandScore(stageAmount(stage, game), stage.band);
+    if (stage.flourish === "heart") {
+      const art = Math.min(1, Math.max(0, (game.flourish - 2) / 8));
+      return fill * 0.62 + art * 0.38;
+    }
+    return fill;
+  }
   const reach = flatDistance(
     game.pos.x,
     game.pos.y,
     stage.target[0],
     stage.target[1],
   );
-  return reach < stage.radius ? placeScore(reach, stage.radius) : 0;
+  return stationQuality(reach, stageStation(stage.kind, stage.sits));
+}
+
+function stageAmount(stage: Stage, game: GameState): number {
+  return stage.kind === "hold" || stage.kind === "tilt"
+    ? game.destinationVolume
+    : game.amount;
 }
 
 /** The same number the ring is showing, said out loud for the HUD. */
@@ -260,26 +338,31 @@ function readout(stage: Stage, game: GameState): string {
     }
     case "hold":
     case "tilt":
-      return `${Math.round(game.amount * 100)} % lleno`;
+      return `${Math.round(game.destinationVolume * 100)} % lleno`;
     case "tamp":
       return `${Math.round(game.amount)} de ${stage.goal} prensadas`;
     case "shake":
       return `${Math.round(game.amount)} de ${stage.goal} sacudidas`;
     case "place":
       // Only worth saying while it is actually in hand.
-      return game.holder ? "suelta en el círculo" : "";
+      return game.holder
+        ? `suelta sobre ${destinationOf(stage.sits)}`
+        : "";
   }
 }
 
 export function CoffeeGame({
   recipe,
   handsRef,
+  holdRef,
   onStatus,
   round,
   running,
+  showGuides = true,
 }: {
   recipe: Recipe;
   handsRef: RefObject<TrackedHand[]>;
+  holdRef?: RefObject<GloveHold>;
   onStatus: (status: StageStatus) => void;
   /** bump to start a fresh brew */
   round: number;
@@ -288,8 +371,15 @@ export function CoffeeGame({
    * this the stage clock would run against a player who is not even playing.
    */
   running: boolean;
+  /** Rings and halos follow the same phase policy as the HUD. */
+  showGuides?: boolean;
 }) {
   const [view, setView] = useState(0);
+  const [cargoOn, setCargoOn] = useState(true);
+  const [spillLook, setSpillLook] = useState({
+    count: 12,
+    colour: "#3b1f10",
+  });
   const stateRef = useRef<GameState | null>(null);
   const sceneRef = useRef<Group>(null);
   const itemRef = useRef<Group>(null);
@@ -297,6 +387,8 @@ export function CoffeeGame({
   const haloRef = useRef<Mesh>(null);
   const fillRef = useRef<Mesh>(null);
   const surfaceRef = useRef<Mesh>(null);
+  const sourceFillRef = useRef<Mesh>(null);
+  const sourceSurfaceRef = useRef<Mesh>(null);
   const bandRefs = useRef<(Mesh | null)[]>([]);
   const hintRefs = useRef<(Mesh | null)[]>([]);
 
@@ -306,6 +398,7 @@ export function CoffeeGame({
   const churnRef = useRef(0);
   const flowRef = useRef(0);
   const spoutRef = useRef(new Vector3());
+  const spoutBRef = useRef(new Vector3());
   const basinRef = useRef(new Vector3());
   const spillRef = useRef(0);
   // The wave simulation for whatever is being filled. It lives here because
@@ -313,13 +406,32 @@ export function CoffeeGame({
   const sloshRef = useRef(createSlosh(16));
   const cheeredAtRef = useRef(-99);
   const cheerOriginRef = useRef(new Vector3());
+  const spillAtRef = useRef(-99);
+  const spillFromRef = useRef(new Vector3());
+  const spillToRef = useRef(new Vector3());
+  const cargoLoadedRef = useRef(true);
+  const jostleRef = useRef(0);
+  const artRef = useRef(0);
+  const lastCarryRef = useRef(new Vector3());
+  const heardRef = useRef({
+    near: false,
+    hurry: false,
+    lock: false,
+    heart: 0,
+    work: null as WorkLoop,
+    steam: false,
+  });
 
   const stages = recipe.stages;
   const shown = stages[Math.min(view, stages.length - 1)];
   const vesselKind = shown.vessel ?? shown.sits;
-  const vessel = VESSELS[vesselKind] ?? VESSELS.mug!;
+  const vessel = usesDripper(shown)
+    ? dripperVessel(KIT[vesselKind]?.vessel ?? KIT.mug!.vessel!)
+    : (KIT[vesselKind]?.vessel ?? KIT.mug!.vessel!);
+  const sourceVessel = KIT[shown.holds]?.vessel;
   const pours = shown.kind === "hold" || shown.kind === "tilt";
   const liquid = LIQUIDS[(shown.liquid ?? "coffee") as LiquidKind];
+  const cupAt = brewAt(shown);
 
   useFrame((frame, delta) => {
     const dt = Math.min(delta, 0.05);
@@ -333,21 +445,36 @@ export function CoffeeGame({
       if (haloRef.current) haloRef.current.visible = false;
       if (fillRef.current) fillRef.current.visible = false;
       if (surfaceRef.current) surfaceRef.current.visible = false;
+      if (sourceFillRef.current) sourceFillRef.current.visible = false;
+      if (sourceSurfaceRef.current) sourceSurfaceRef.current.visible = false;
       for (const band of bandRefs.current) if (band) band.visible = false;
       for (const dot of hintRefs.current) if (dot) dot.visible = false;
       steamRef.current = 0;
       churnRef.current = 0;
       flowRef.current = 0;
       spillRef.current = 0;
+      if (heardRef.current.work) {
+        heardRef.current.work = null;
+        setWorkLoop(null);
+      }
+      writeGloveHold(holdRef?.current, null);
       return;
     }
 
     const game = (stateRef.current ??= createGameState(recipe, round));
     const hands = handsRef.current ?? [];
+    spillAtRef.current = game.spillAt;
+    if (cargoLoadedRef.current !== game.cargoLoaded) {
+      cargoLoadedRef.current = game.cargoLoaded;
+      setCargoOn(game.cargoLoaded);
+    }
 
     if (game.round !== round || game.recipeId !== recipe.id) {
       stateRef.current = createGameState(recipe, round);
+      cargoLoadedRef.current = true;
+      setCargoOn(true);
       setView(0);
+      writeGloveHold(holdRef?.current, null);
       return;
     }
 
@@ -358,6 +485,10 @@ export function CoffeeGame({
       if (haloRef.current) haloRef.current.visible = false;
       for (const dot of hintRefs.current) if (dot) dot.visible = false;
       steamRef.current = approach(steamRef.current, 0.85, 2, dt);
+      if (heardRef.current.work) {
+        heardRef.current.work = null;
+        setWorkLoop(null);
+      }
       if (game.changed || time - game.publishAt > PUBLISH_INTERVAL) {
         game.publishAt = time;
         game.changed = false;
@@ -373,9 +504,11 @@ export function CoffeeGame({
           near: false,
           marks: game.published,
           hurry: false,
+          working: false,
           done: true,
         });
       }
+      writeGloveHold(holdRef?.current, null);
       return;
     }
 
@@ -395,8 +528,14 @@ export function CoffeeGame({
 
     /** Take the stage as it stands, mark it, and move on. */
     const commit = (mark: number) => {
-      game.marks.push(clamp01(mark));
-      game.published = [...game.marks];
+      if (!requestSettlement(game, mark)) return;
+      playSfx("stage");
+      playSfx("cheer");
+      heardRef.current.work = null;
+      setWorkLoop(null);
+      game.settleUntil = time + 0.62;
+      game.holder = null;
+      game.changed = true;
       // Praise lands where the work happened, not at some fixed spot.
       cheerOriginRef.current.set(stage.target[0], stage.target[1], REST_Z + 0.4);
       cheeredAtRef.current = time;
@@ -404,20 +543,140 @@ export function CoffeeGame({
       // And the room joins in.
       crowdMood.cheerAt = time;
       game.swell.velocity += 2.2;
+      flowRef.current = 0;
+    };
+
+    const beginDump = (mark: number) => {
+      if (game.dumping || !game.cargoLoaded) return;
+      game.dumping = true;
+      game.dumpElapsed = 0;
+      game.dumpMark = mark;
+      game.changed = true;
+      playSfx("whoosh");
+    };
+
+    if (game.dumping) {
+      game.dumpElapsed += dt;
+      const amount = dumpAmount(game.dumpElapsed);
+      game.pos.x = approach(game.pos.x, stage.target[0], 12, dt);
+      game.pos.y = approach(game.pos.y, stage.target[1], 12, dt);
+      if (dumpReleases(amount) && game.cargoLoaded && KIT[stage.holds]?.cargo) {
+        const cargo = KIT[stage.holds]!.cargo!;
+        game.cargoLoaded = false;
+        game.spillAt = time;
+        const mouth = dumpMouth(
+          {
+            x: game.pos.x,
+            y: game.pos.y,
+            z: game.lift.value,
+          },
+          scoopDumpPose(amount),
+        );
+        spillFromRef.current.set(mouth.x, mouth.y, mouth.z);
+        spillToRef.current.set(
+          stage.target[0],
+          stage.target[1],
+          usesDripper(stage) ? DRIPPER.bed : REST_Z + 0.28,
+        );
+        setSpillLook({
+          count: cargo.count ?? 18,
+          colour: cargo.colour ?? "#3b1f10",
+        });
+        playSfx("clink");
+      }
+      if (amount >= 1) {
+        game.dumping = false;
+        commit(game.dumpMark);
+        return;
+      }
+    }
+
+    if (game.lifecycle === "settling") {
+      game.pos.x = approach(game.pos.x, stage.target[0], 8, dt);
+      game.pos.y = approach(game.pos.y, stage.target[1], 8, dt);
+      stepSpring(game.lift, REST_Z, 95, dt, 0.2);
+      stepSpring(game.grow, 1.04, 140, dt, 0.45);
+      if (itemRef.current) {
+        itemRef.current.position.set(game.pos.x, game.pos.y, game.lift.value);
+        itemRef.current.scale.setScalar(Math.max(game.grow.value, 0.05));
+        itemRef.current.rotation.x = approach(
+          itemRef.current.rotation.x,
+          0,
+          10,
+          dt,
+        );
+        itemRef.current.rotation.y = approach(
+          itemRef.current.rotation.y,
+          0,
+          10,
+          dt,
+        );
+        itemRef.current.rotation.z = approach(
+          itemRef.current.rotation.z,
+          0,
+          10,
+          dt,
+        );
+      }
+      if (ringRef.current) ringRef.current.visible = false;
+      if (haloRef.current) haloRef.current.visible = false;
+      for (const dot of hintRefs.current) if (dot) dot.visible = false;
+
+      if (game.changed || time - game.publishAt > PUBLISH_INTERVAL) {
+        game.publishAt = time;
+        game.changed = false;
+        onStatus({
+          index: game.stage,
+          total: stages.length,
+          title: stage.title,
+          instruction: "Bien puesto — preparando el siguiente paso",
+          progress: 1,
+          detail: "Asentando…",
+          quality: game.pendingMark,
+          holding: false,
+          near: false,
+          marks: game.published,
+          hurry: false,
+          working: false,
+          done: false,
+        });
+      }
+      if (time < game.settleUntil) {
+        writeGloveHold(holdRef?.current, null);
+        return;
+      }
+
+      const settledMark = finishSettlement(game);
+      if (settledMark === null) {
+        writeGloveHold(holdRef?.current, null);
+        return;
+      }
+      game.marks.push(settledMark);
+      game.published = [...game.marks];
       game.stage += 1;
       game.amount = 0;
+      game.sourceVolume = 1.2;
+      game.destinationVolume = 0;
       game.angle = 0;
       game.turn = null;
       game.stroke = null;
+      game.flourish = 0;
+      game.artStroke = null;
       game.tilt = 0;
       game.elapsed = 0;
       game.touched = false;
       game.intro = 0;
       game.holder = null;
       game.changed = true;
+      game.cargoLoaded = true;
+      game.dumping = false;
+      game.dumpElapsed = 0;
+      game.dumpDwell = 0;
       calmSlosh(sloshRef.current);
       game.spilled = 0;
       game.overflowing = 0;
+      game.wasPouring = false;
+      game.settleUntil = -1;
       if (game.stage >= stages.length) {
         game.done = true;
       } else {
@@ -427,12 +686,34 @@ export function CoffeeGame({
         // The next stage's object drops in rather than appearing.
         setSpring(game.grow, 0.55);
         setView(game.stage);
+        playSfx("land");
+        heardRef.current = {
+          near: false,
+          hurry: false,
+          lock: false,
+          heart: 0,
+          work: null,
+          steam: false,
+        };
       }
-    };
+      writeGloveHold(holdRef?.current, null);
+      return;
+    }
 
     // Only the current stage's object can be picked up, so there is never a
     // question about what to reach for.
     let near = false;
+    let nearHand: Handedness | null = null;
+    let nearReach = Infinity;
+    let working = 0;
+    let holderIsLive = false;
+    if (game.dumping) {
+      near = true;
+      nearHand = game.holder;
+      working = 1;
+      holderIsLive = true;
+    }
+    if (!game.dumping) {
     for (const handedness of ["Left", "Right"] as const) {
       const hand = hands.find((item) => item.handedness === handedness);
       if (!hand) {
@@ -440,11 +721,16 @@ export function CoffeeGame({
         continue;
       }
       const reach = handObjectDistance(hand, game.pos.x, game.pos.y);
-      if (reach < GRAB_RADIUS) near = true;
+      if (reach < GRAB_RADIUS && reach < nearReach) {
+        near = true;
+        nearHand = handedness;
+        nearReach = reach;
+      }
 
       const grabbing = hand.isGrabbing;
       if (grabbing && !game.wasGrabbing[handedness] && !game.holder) {
         if (reach < GRAB_RADIUS) {
+          playSfx("grab");
           game.holder = handedness;
           game.changed = true;
           // A grab should feel like a catch: throw the scale past its target
@@ -473,16 +759,52 @@ export function CoffeeGame({
       game.wasGrabbing[handedness] = grabbing;
     }
     game.near = near;
+    if (near && !heardRef.current.near && !game.holder) {
+      heardRef.current.near = true;
+      playSfx("near");
+    }
+    if (!near) heardRef.current.near = false;
 
     const holder = game.holder
       ? hands.find((item) => item.handedness === game.holder)
       : undefined;
-    // Letting go, or losing the hand entirely, both end the attempt the same way.
-    const released = game.holder !== null && (!holder || !holder.isGrabbing);
-    /** How hard the player is working this instant, 0..1, for the effects. */
-    let working = 0;
+    // Coasting is still a live hold. A blink must not drop the cup.
+    holderIsLive = Boolean(holder);
+    const release = releaseReason(
+      game.holder !== null,
+      holderIsLive,
+      Boolean(holder?.isGrabbing),
+    );
+    const released = release !== "none";
 
-    if (holder && !released) {
+    if (
+      holder &&
+      hasCargoDump(stage) &&
+      game.cargoLoaded &&
+      overStation(
+        flatDistance(game.pos.x, game.pos.y, stage.target[0], stage.target[1]),
+        stageStation(stage.kind, stage.sits),
+      )
+    ) {
+      game.dumpDwell += dt;
+      if (game.dumpDwell >= DUMP_DWELL) {
+        beginDump(
+          stationQuality(
+            flatDistance(
+              game.pos.x,
+              game.pos.y,
+              stage.target[0],
+              stage.target[1],
+            ),
+            stageStation(stage.kind, stage.sits),
+          ),
+        );
+      }
+    } else {
+      game.dumpDwell = 0;
+    }
+
+    if (holder && holderIsLive && !released && !game.dumping) {
       if (stage.kind === "crank") {
         const angle = Math.atan2(
           holder.cursor.y - stage.target[1],
@@ -553,12 +875,21 @@ export function CoffeeGame({
           stage.target[0],
           stage.target[1],
         );
-        const inside = reach < stage.radius;
+        const station = stageStation(stage.kind, stage.sits);
+        const inside = overStation(reach, station);
 
         if (stage.kind === "hold") {
           if (inside) {
-            game.amount += (stage.rate ?? 0.4) * dt;
-            working = 1;
+            const result = pour({
+              from: game.sourceVolume,
+              into: game.destinationVolume,
+              room: 1,
+              amount: (stage.rate ?? 0.4) * dt,
+            });
+            game.sourceVolume = result.from;
+            game.destinationVolume = result.into;
+            game.spilled += result.spilled;
+            working = result.moved + result.spilled > 0 ? 1 : 0;
           }
         } else if (stage.kind === "tilt") {
           game.tilt = angleDelta(
@@ -567,8 +898,21 @@ export function CoffeeGame({
           );
           const flow = pourFlow(game.tilt);
           if (inside) {
-            game.amount += flow * (stage.rate ?? 0.4) * dt;
-            working = flow;
+            const result = pour({
+              from: game.sourceVolume,
+              into: game.destinationVolume,
+              room: 1,
+              amount: flow * (stage.rate ?? 0.4) * dt,
+            });
+            game.sourceVolume = result.from;
+            game.destinationVolume = result.into;
+            game.spilled += result.spilled;
+            working = result.moved + result.spilled > 0 ? flow : 0;
+            if (stage.flourish === "heart" && working > 0.08) {
+              const art = (game.artStroke ??= newStroke(holder.cursor.x));
+              updateStroke(art, holder.cursor.x, 0.14);
+              game.flourish = art.count;
+            }
           }
         } else if (stage.kind === "shake") {
           const stroke = (game.stroke ??= newStroke(holder.cursor.x));
@@ -586,6 +930,7 @@ export function CoffeeGame({
             game.grow.velocity -= 5;
             game.swell.velocity += 0.8;
             working = 1;
+            playSfx("tamp");
           }
         }
       }
@@ -593,10 +938,11 @@ export function CoffeeGame({
       // Past the brim it goes on the counter. Cutting the stage off the instant
       // it filled hid the mistake; letting it run over shows the player what
       // they did, and the puddle stays there afterwards.
-      if (pours && game.amount >= 1) {
-        const over = game.amount - 1;
-        game.amount = 1;
+      if (pours && game.destinationVolume >= 1 && working > 0) {
+        const over = game.destinationVolume - 1;
+        game.destinationVolume = 1;
         game.spilled += over;
+        if (game.overflowing === 0) playSfx("splash");
         game.overflowing += dt;
         if (game.overflowing > OVERFLOW_GRACE) {
           commit(bandScore(1, stage.band ?? [1, 1]));
@@ -606,33 +952,51 @@ export function CoffeeGame({
     }
 
     if (released) {
-      game.holder = null;
-      game.changed = true;
       const reach = flatDistance(
         game.pos.x,
         game.pos.y,
         stage.target[0],
         stage.target[1],
       );
-      if (stage.kind === "place") {
-        if (reach < stage.radius) {
-          game.pos.x = stage.target[0];
-          game.pos.y = stage.target[1];
-          commit(placeScore(reach, stage.radius));
+      const station = stageStation(stage.kind, stage.sits);
+      if (
+        stage.kind === "place" &&
+        overStation(reach, station) &&
+        hasCargoDump(stage) &&
+        game.cargoLoaded
+      ) {
+        beginDump(stationQuality(reach, station));
+      } else {
+      playSfx("drop");
+      game.holder = null;
+      game.changed = true;
+      if (overStation(reach, station)) playSfx("clink");
+      if (release === "tracking-lost") {
+        // A camera blink is not an attempt. Put the prop down and keep the
+        // accumulated work so the player can safely re-grab it.
+        game.lift.velocity = -Math.abs(game.lift.velocity) - 1.2;
+        flowRef.current = 0;
+      } else if (stage.kind === "place") {
+        if (overStation(reach, station)) {
+          commit(stationQuality(reach, station));
           return;
         }
         // Dropped short: it stays where it fell, set down on whatever is under
         // it, and can be picked up again. It is never left in mid-air.
         game.lift.velocity = -Math.abs(game.lift.velocity) - 1.2;
-      } else if (game.amount > MIN_EFFORT) {
+      } else if (
+        canCommitRelease(release, stageAmount(stage, game), MIN_EFFORT)
+      ) {
         commit(currentQuality(stage, game));
         return;
       }
+      }
+    }
     }
 
     // Out of time: the stage is marked as it stands and the brew carries on.
     const limit = game.touched ? STAGE_LIMIT : IDLE_LIMIT;
-    if (game.elapsed > limit) {
+    if (!game.dumping && game.elapsed > limit) {
       commit(currentQuality(stage, game));
       return;
     }
@@ -642,7 +1006,7 @@ export function CoffeeGame({
     const progress =
       stage.kind === "place"
         ? quality
-        : clamp01(game.amount / Math.max(stage.goal, 1e-4));
+        : clamp01(stageAmount(stage, game) / Math.max(stage.goal, 1e-4));
     const held = game.holder !== null;
 
     const intro = ease(game.intro);
@@ -693,7 +1057,7 @@ export function CoffeeGame({
       game.grow.velocity -= kick * 4;
       game.swell.velocity += kick * 0.5;
       // A cup put down hard rocks whatever is in it.
-      if (pours && game.amount > 0.02) {
+      if (pours && game.destinationVolume > 0.02) {
         splash(sloshRef.current, 0, 0, kick * 0.9, 4);
       }
     }
@@ -710,23 +1074,69 @@ export function CoffeeGame({
       item.position.set(game.pos.x, game.pos.y, game.lift.value + idle);
       item.scale.setScalar(Math.max(game.grow.value, 0.05));
       item.rotation.set(0, 0, 0);
-      if (stage.kind === "crank") {
+      if (game.dumping) {
+        const pour = scoopDumpPose(dumpAmount(game.dumpElapsed));
+        item.position.set(
+          game.pos.x,
+          game.pos.y,
+          game.lift.value + pour.lift,
+        );
+        item.rotation.set(pour.roll * 0.18, pour.roll, pour.twist);
+      } else if (stage.kind === "crank") {
         // The pestle leans into the circle it is being swung round.
         item.rotation.z = game.angle + Math.PI / 2;
         item.rotation.x = 0.3 + working * 0.14;
-      } else {
+      } else if (stage.kind === "tilt") {
         // Rolling the wrist either way tips the spout down, so the object
         // always agrees with what the hand is doing.
-        if (stage.kind === "tilt") {
-          item.rotation.y = Math.min(Math.abs(game.tilt), 1.25);
-        }
+        item.rotation.y = Math.min(Math.abs(game.tilt), 1.25);
         if (!held) item.rotation.z = Math.sin(time * 1.1) * 0.06;
+      } else if (stage.kind === "shake" && held) {
+        // The jar itself has to move or a counted shake reads as a number
+        // going up for no reason.
+        const shake = 0.12 + working * 0.22;
+        item.rotation.z = Math.sin(time * 16) * shake;
+        item.rotation.x = Math.sin(time * 13.4) * shake * 0.45;
+      } else if (stage.kind === "tamp" && held) {
+        // A real tamp is a short slam: lift, drop, twist. The mallet is
+        // already pitched onto its head so this reads as pressing, not
+        // waving a vertical hammer.
+        const dipping = (game.stroke?.dir ?? 0) < 0;
+        item.position.z += dipping ? -0.28 : 0.1;
+        item.rotation.x = dipping ? 0.22 : 0.06;
+        item.rotation.z = dipping
+          ? Math.sin(time * 18) * 0.08
+          : Math.sin(time * 4) * 0.03;
+      } else if (stage.kind === "hold" && held) {
+        const locked = overStation(
+          flatDistance(
+            game.pos.x,
+            game.pos.y,
+            stage.target[0],
+            stage.target[1],
+          ),
+          stageStation(stage.kind, stage.sits),
+        );
+        if (locked && usesGroup(stage)) {
+          // Seat under the group — the pan does not rest on the machine.
+          item.position.set(
+            stage.target[0] + GROUP.lock[0],
+            stage.target[1] + GROUP.lock[1],
+            GROUP.lock[2],
+          );
+          item.rotation.set(0.08, 0, 0.1);
+        } else {
+          item.rotation.z = locked ? 0.55 : 0.12;
+          item.position.z += locked ? 0.08 : 0;
+        }
+      } else if (!held) {
+        item.rotation.z = Math.sin(time * 1.1) * 0.06;
       }
     }
 
     const ring = ringRef.current;
     if (ring) {
-      ring.visible = true;
+      ring.visible = showGuides;
       // Floats above the scenery: seen from above it reads as a halo on the
       // destination, and never hides inside a prop.
       ring.position.set(
@@ -737,7 +1147,8 @@ export function CoffeeGame({
       // Beats faster the closer the attempt is to its mark, and jumps once as
       // the stage is cleared.
       const beat = Math.sin(time * (2.2 + quality * 3.4)) * 0.022;
-      ring.scale.setScalar(stage.radius * (1 + beat + cheer * 0.22));
+      const station = stageStation(stage.kind, stage.sits);
+      ring.scale.setScalar(station.mouth * (1 + beat + cheer * 0.22));
       const material = ring.material as MeshStandardMaterial;
       // Gold means "this is the mark you are scoring", not "you are finished":
       // overshooting cools it again, which is the whole warning.
@@ -751,41 +1162,70 @@ export function CoffeeGame({
     // faster once a hand is close enough to actually grab it.
     const halo = haloRef.current;
     if (halo) {
-      halo.visible = !held;
+      halo.visible = showGuides && !held;
       halo.position.set(game.pos.x, game.pos.y, REST_Z - 0.09);
-      const beat = game.near ? 1.14 : 1 + Math.sin(time * 3) * 0.06;
+      const beat = game.near ? 1.22 : 1 + Math.sin(time * 3) * 0.06;
       halo.scale.setScalar(beat);
-      halo.rotation.z = time * (game.near ? 1.4 : 0.35);
+      halo.rotation.z = time * (game.near ? 1.8 : 0.35);
       const material = halo.material as MeshStandardMaterial;
-      material.emissiveIntensity = game.near ? 1.8 : 0.6;
+      material.emissiveIntensity = game.near ? 2.4 : 0.6;
     }
 
-    // Dots arcing from the object toward its destination: the whole
-    // instruction, readable without words.
-    const showHint = stage.kind === "place" && !held;
+    // Dots that say what to do without words: an arc toward the mark, or a
+    // circle around the mortar. Hidden once the object is already there —
+    // a path to somewhere you are standing is noise.
+    const reachNow = flatDistance(
+      game.pos.x,
+      game.pos.y,
+      stage.target[0],
+      stage.target[1],
+    );
+    const onMark = overStation(
+      reachNow,
+      stageStation(stage.kind, stage.sits),
+    );
+    const showHint =
+      showGuides &&
+      (stage.kind === "crank" ||
+        (stage.kind === "place" && !held) ||
+        ((stage.kind === "hold" ||
+          stage.kind === "tilt" ||
+          stage.kind === "tamp") &&
+          held &&
+          !onMark));
     for (let i = 0; i < HINT_DOTS; i++) {
       const dot = hintRefs.current[i];
       if (!dot) continue;
       dot.visible = showHint;
       if (!showHint) continue;
-      const t = (i / HINT_DOTS + time * 0.35) % 1;
-      const fade = Math.sin(t * Math.PI);
-      dot.position.set(
-        game.pos.x + (stage.target[0] - game.pos.x) * t,
-        game.pos.y + (stage.target[1] - game.pos.y) * t,
-        REST_Z + 0.04 + fade * 0.3,
-      );
-      dot.scale.setScalar(0.06 + fade * 0.08);
+      if (stage.kind === "crank") {
+        const angle = (i / HINT_DOTS) * Math.PI * 2 + time * 1.1;
+        dot.position.set(
+          stage.target[0] + Math.cos(angle) * CRANK_ARM,
+          stage.target[1] + Math.sin(angle) * CRANK_ARM,
+          CRANK_Z + 0.18,
+        );
+        dot.scale.setScalar(0.07);
+      } else {
+        const t = (i / HINT_DOTS + time * 0.35) % 1;
+        const fade = Math.sin(t * Math.PI);
+        dot.position.set(
+          game.pos.x + (stage.target[0] - game.pos.x) * t,
+          game.pos.y + (stage.target[1] - game.pos.y) * t,
+          REST_Z + 0.04 + fade * 0.3,
+        );
+        dot.scale.setScalar(0.06 + fade * 0.08);
+      }
     }
 
     // Liquid standing in the vessel, with its crema riding on the surface.
-    const level = pours ? clamp01(game.amount) : 0;
-    const surface = vessel.base + level * vessel.height;
+    const level = pours ? clamp01(game.destinationVolume) : 0;
+    const surface = vessel.floor + level * vessel.depth;
     const fill = fillRef.current;
     if (fill) {
       fill.visible = level > 0.01;
       fill.scale.y = Math.max(level, 1e-3);
-      fill.position.z = vessel.base + (level * vessel.height) / 2;
+      fill.position.z = vessel.floor + (level * vessel.depth) / 2;
     }
     // The surface rides on top of whatever is in the vessel, and is where all
     // the movement happens.
@@ -793,6 +1233,33 @@ export function CoffeeGame({
     if (top) {
       top.visible = level > 0.02;
       top.position.z = surface + 0.01;
+    }
+    const sourceLevel =
+      stage.kind === "tilt"
+        ? clamp01(game.sourceVolume / 1.2)
+        : stage.kind === "shake"
+          ? 0.72
+          : 0;
+    if (sourceFillRef.current && sourceVessel) {
+      sourceFillRef.current.visible = sourceLevel > 0.01;
+      sourceFillRef.current.scale.y = Math.max(sourceLevel, 1e-3);
+      sourceFillRef.current.position.z =
+        sourceVessel.floor + (sourceLevel * sourceVessel.depth) / 2;
+    }
+    if (sourceSurfaceRef.current && sourceVessel) {
+      sourceSurfaceRef.current.visible = sourceLevel > 0.02;
+      sourceSurfaceRef.current.position.z =
+        sourceVessel.floor +
+        sourceLevel * sourceVessel.depth +
+        0.012 +
+        (stage.kind === "shake"
+          ? Math.sin(time * 15) * 0.025 * working
+          : 0);
+      // Counter the vessel roll so the free surface stays level while the
+      // container tips around it.
+      sourceSurfaceRef.current.rotation.x = -(itemRef.current?.rotation.x ?? 0);
+      sourceSurfaceRef.current.rotation.y = -(itemRef.current?.rotation.y ?? 0);
+      sourceSurfaceRef.current.rotation.z = -(itemRef.current?.rotation.z ?? 0);
     }
 
     // Run the water, and dent it where the stream is landing. The dent is
@@ -821,7 +1288,7 @@ export function CoffeeGame({
       const edge = stage.band?.[i];
       band.visible = pours && edge !== undefined;
       if (edge !== undefined) {
-        band.position.z = vessel.base + edge * vessel.height;
+        band.position.z = vessel.floor + edge * vessel.depth;
       }
     }
 
@@ -834,22 +1301,122 @@ export function CoffeeGame({
       dt,
     );
     // The grounds jump while they are being worked.
-    game.churn = approach(game.churn, working, 8, dt);
+    game.churn = approach(game.churn, working > 0.12 ? working : 0, 10, dt);
     churnRef.current = game.churn;
 
-    // The stream runs from the lip of whatever is being tipped down into
-    // whatever is underneath it, so it leans as the hand leans.
-    const streaming = stage.kind === "tilt" ? working : 0;
-    flowRef.current = approach(flowRef.current, streaming, 14, dt);
-    // The lip, not the middle: a stream starting inside the vessel is hidden
-    // by the vessel. Tipping turns the spout toward +x, so that is where it
-    // leaves from.
-    spoutRef.current.set(
-      game.pos.x + 1.05,
-      game.pos.y - 0.2,
-      game.lift.value - 0.05,
+    const carrySpeed = Math.hypot(
+      game.pos.x - lastCarryRef.current.x,
+      game.pos.y - lastCarryRef.current.y,
     );
-    basinRef.current.set(stage.target[0], stage.target[1], surface);
+    lastCarryRef.current.set(game.pos.x, game.pos.y, game.pos.z);
+    jostleRef.current = approach(
+      jostleRef.current,
+      held && carrySpeed > 0.04
+        ? Math.min(0.7, (carrySpeed - 0.04) * 6)
+        : 0,
+      14,
+      dt,
+    );
+    artRef.current = Math.min(1, game.flourish / 10);
+
+    // The stream runs from the lip of whatever is being tipped, or from the
+    // group head during an extraction — espresso falls on its own once locked.
+    const streaming =
+      stage.kind === "tilt"
+        ? working
+        : stage.kind === "hold" && onMark
+          ? Math.max(working, 0.45)
+          : 0;
+    if (streaming > 0.08 && !game.wasPouring) playSfx("pour");
+    game.wasPouring = streaming > 0.02;
+
+    const heard = heardRef.current;
+    const lockedGroup =
+      stage.kind === "hold" &&
+      usesGroup(stage) &&
+      Boolean(game.holder) &&
+      overStation(
+        flatDistance(game.pos.x, game.pos.y, stage.target[0], stage.target[1]),
+        stageStation(stage.kind, stage.sits),
+      );
+    if (lockedGroup && !heard.lock) {
+      heard.lock = true;
+      playSfx("lock");
+    }
+    if (stage.flourish === "heart" && game.flourish > heard.heart) {
+      if (game.flourish === 3 || game.flourish === 7) playSfx("heart");
+      heard.heart = game.flourish;
+    }
+    if (stage.kind === "shake" && working > 0.2) playSfx("foam");
+    if (steamRef.current > 0.22 && !heard.steam) {
+      heard.steam = true;
+      playSfx("steam");
+    }
+    const hurryNow = game.elapsed > limit - HURRY_AT && game.touched;
+    if (hurryNow && !heard.hurry) {
+      heard.hurry = true;
+      playSfx("hurry");
+    }
+    let nextWork: WorkLoop = null;
+    if (working > 0.12) {
+      if (stage.kind === "crank") nextWork = "grind";
+      else if (stage.kind === "hold" && usesGroup(stage)) nextWork = "extract";
+      else if (stage.kind === "hold" || stage.kind === "tilt") nextWork = "pour";
+      else if (stage.kind === "shake") nextWork = "foam";
+    } else if (heard.work && working > 0.04) {
+      nextWork = heard.work;
+    }
+    if (nextWork !== heard.work) {
+      heard.work = nextWork;
+      setWorkLoop(nextWork);
+    }
+    flowRef.current =
+      held && holderIsLive
+        ? approach(flowRef.current, streaming, 14, dt)
+        : 0;
+    const pourTilt = stage.kind === "tilt" ? Math.min(Math.abs(game.tilt), 1.25) : 0;
+    if (stage.kind === "hold" && usesGroup(stage)) {
+      const [left, right] = GROUP.spouts;
+      spoutRef.current.set(
+        stage.target[0] + left[0],
+        stage.target[1] + left[1],
+        left[2],
+      );
+      spoutBRef.current.set(
+        stage.target[0] + right[0],
+        stage.target[1] + right[1],
+        right[2],
+      );
+    } else if (stage.kind === "hold") {
+      spoutRef.current.set(stage.target[0], stage.target[1] - 0.42, 1.22);
+      spoutBRef.current.set(stage.target[0], stage.target[1] - 0.42, -99);
+    } else {
+      // The lip, not the middle. Its offset comes from the held vessel and is
+      // rotated by both its authored yaw and the player's tilt, keeping the
+      // stream connected to the visible spout instead of sliding off the model.
+      const heldEntry = KIT[stage.holds];
+      const heldVessel = heldEntry?.vessel;
+      const yaw = heldEntry?.yaw ?? 0;
+      const lipReach = (heldVessel?.radius ?? 0.42) + 0.18;
+      const lipX = Math.cos(yaw) * lipReach;
+      const lipY = Math.sin(yaw) * lipReach - 0.05;
+      const lipZ = heldVessel
+        ? heldVessel.floor + heldVessel.depth * 0.86
+        : 0.52;
+      spoutRef.current.set(
+        game.pos.x + Math.cos(pourTilt) * lipX + Math.sin(pourTilt) * lipZ,
+        game.pos.y + lipY,
+        game.lift.value - Math.sin(pourTilt) * lipX + Math.cos(pourTilt) * lipZ,
+      );
+      spoutBRef.current.set(
+        game.pos.x,
+        game.pos.y,
+        -99,
+      );
+    }
+    const bed = usesDripper(stage) && stage.kind === "tilt" ? DRIPPER.bed : surface;
+    const cup = brewAt(stage);
+    basinRef.current.set(cup[0], cup[1], bed);
     spillRef.current = game.spilled;
 
     if (game.changed || time - game.publishAt > PUBLISH_INTERVAL) {
@@ -867,9 +1434,21 @@ export function CoffeeGame({
         near: game.near,
         marks: game.published,
         hurry: game.elapsed > limit - HURRY_AT,
+        working: working > 0.05,
         done: false,
       });
     }
+
+    writeGloveHold(holdRef?.current, {
+      handedness: game.holder ?? nearHand,
+      tool: stage.holds,
+      near,
+      holding: held || game.dumping,
+      gripX: game.pos.x,
+      gripY: game.pos.y,
+      gripZ: game.lift.value + 0.1,
+      dump: game.dumping ? dumpAmount(game.dumpElapsed) : 0,
+    });
   });
 
   const key = `${recipe.id}-${view}`;
@@ -924,49 +1503,140 @@ export function CoffeeGame({
         <Prop
           key={`vessel-${key}`}
           kind={shown.vessel}
-          position={shown.target}
+          position={cupAt}
         />
       )}
       {shown.kind !== "crank" && (
         <Prop key={`mat-${key}`} kind="mat" position={shown.item} />
       )}
 
-      <group position={[shown.target[0], shown.target[1], 0]}>
+      <group position={[cupAt[0], cupAt[1], 0]}>
         <Level
           fillRef={fillRef}
           surfaceRef={surfaceRef}
           bandRefs={bandRefs}
           slosh={sloshRef}
           radius={vessel.radius}
-          height={vessel.height}
+          height={vessel.depth}
           look={liquid}
         />
-        <Steam amount={steamRef} position={[0, 0, vessel.base + 0.34]} />
+        <Steam amount={steamRef} position={[0, 0, vessel.floor + 0.34]} />
         {/* What went over the rim, left on the counter where it landed. */}
         <Spill
           amount={spillRef}
           position={[0, -0.2, REST_Z - 0.09]}
           colour={liquid.colour}
         />
-        {/* Grounds in the bottom of the mortar, jumping as they are worked. */}
-        {shown.kind === "crank" && (
+        {(shown.kind === "crank" || shown.sits === "grinder") && (
+          <>
+            <Beans
+              position={[0, 0, 0.5]}
+              radius={0.74}
+              count={34}
+              shake={shown.kind === "crank" ? churnRef : undefined}
+              colour="#3b1f10"
+              heap
+            />
+            <GroundDust amount={churnRef} position={[0, 0, 0.58]} />
+          </>
+        )}
+        {shown.kind === "tilt" && usesDripper(shown) && (
           <Beans
-            position={[0, 0, 0.34]}
-            radius={0.62}
-            count={26}
-            shake={churnRef}
+            position={DRIPPER.heap}
+            radius={DRIPPER.radius}
+            count={DRIPPER.count}
             colour={GROUNDS}
+            heap
+            grain={0.045}
+          />
+        )}
+        {shown.kind === "tamp" && (
+          <>
+            <Beans
+              position={[0, -0.42, 0.22]}
+              radius={0.36}
+              count={20}
+              shake={churnRef}
+              colour={GROUNDS}
+              heap
+            />
+            <GroundDust
+              amount={churnRef}
+              position={[0, 0, 0.32]}
+              count={8}
+            />
+          </>
+        )}
+        {shown.flourish === "heart" && (
+          <LatteArt
+            amount={artRef}
+            position={[0, 0, vessel.floor + vessel.depth * 0.62]}
+            radius={vessel.radius * 0.4}
           />
         )}
       </group>
 
       {/* The one object the player can hold this stage */}
       <group ref={itemRef}>
-        <Prop key={`holds-${key}`} kind={shown.holds} />
-        {shown.holds === "scoop" && (
-          <Beans position={[0.18, 0, 0.1]} radius={0.26} count={14} />
+        <Prop
+          key={`holds-${key}`}
+          kind={shown.holds}
+          showCargo={cargoOn && Boolean(KIT[shown.holds]?.cargo)}
+          shake={jostleRef}
+        />
+        {(shown.kind === "tilt" || shown.kind === "shake") && sourceVessel && (
+          <>
+            <mesh ref={sourceFillRef} rotation={[Math.PI / 2, 0, 0]}>
+              <cylinderGeometry
+                args={[
+                  sourceVessel.radius * 0.92,
+                  sourceVessel.radius * 0.88,
+                  sourceVessel.depth,
+                  32,
+                ]}
+              />
+              <meshStandardMaterial
+                color={liquid.colour}
+                roughness={liquid.roughness}
+                metalness={liquid.metalness}
+                transparent={liquid.opacity < 1}
+                opacity={liquid.opacity}
+              />
+            </mesh>
+            <mesh ref={sourceSurfaceRef}>
+              <circleGeometry args={[sourceVessel.radius * 0.9, 32]} />
+              <meshStandardMaterial
+                color={liquid.skin ?? liquid.colour}
+                roughness={liquid.skin ? 0.68 : liquid.roughness}
+                metalness={liquid.metalness}
+                transparent={liquid.opacity < 1}
+                opacity={liquid.opacity}
+              />
+            </mesh>
+            {shown.kind === "shake" && (
+              <Beans
+                position={[
+                  0,
+                  0,
+                  sourceVessel.floor + sourceVessel.depth * 0.74,
+                ]}
+                radius={sourceVessel.radius * 0.72}
+                count={14}
+                shake={churnRef}
+                colour={LIQUIDS.foam.colour}
+              />
+            )}
+          </>
         )}
       </group>
+
+      <BeanSpill
+        firedAt={spillAtRef}
+        from={spillFromRef}
+        to={spillToRef}
+        count={spillLook.count}
+        colour={spillLook.colour}
+      />
 
       {/* The pour itself, falling from the lip to the surface below it. */}
       <PourStream
@@ -974,7 +1644,16 @@ export function CoffeeGame({
         from={spoutRef}
         to={basinRef}
         colour={liquid.colour}
+        thickness={liquid.thickness}
       />
+      <PourStream
+        flow={flowRef}
+        from={spoutBRef}
+        to={basinRef}
+        colour={liquid.colour}
+        thickness={liquid.thickness * 0.92}
+      />
+      <PourImpact flow={flowRef} to={basinRef} colour={liquid.colour} />
 
       <Burst firedAt={cheeredAtRef} origin={cheerOriginRef} />
     </group>

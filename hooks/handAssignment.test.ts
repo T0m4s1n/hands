@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { assignHands } from "./handAssignment.ts";
+import {
+  anatomicalHandedness,
+  assignHands,
+  fuseHandedness,
+  landmarkChirality,
+  MAX_TRACKED_HANDS,
+  selectPersonHands,
+} from "./handAssignment.ts";
 
 type Hd = "Left" | "Right";
 const at = (x: number, label: Hd) => ({ wrist: { x, y: 0.5, z: 0 }, label });
@@ -10,6 +17,78 @@ const last = (l?: number, r?: number) => {
   if (r !== undefined) m.set("Right", { x: r, y: 0.5, z: 0 });
   return m;
 };
+
+function handCloud(side: "Left" | "Right") {
+  const sign = side === "Right" ? 1 : -1;
+  const wrist = { x: 0.5, y: 0.7, z: 0 };
+  const points = Array.from({ length: 21 }, () => ({ ...wrist }));
+  points[0] = wrist;
+  points[5] = { x: 0.5 - 0.12 * sign, y: 0.45, z: -0.02 };
+  points[9] = { x: 0.5, y: 0.42, z: -0.03 };
+  points[17] = { x: 0.5 + 0.12 * sign, y: 0.48, z: -0.02 };
+  points[4] = { x: 0.5 - 0.2 * sign, y: 0.55, z: -0.01 };
+  points[2] = { ...points[4] };
+  return points;
+}
+
+assert.equal(landmarkChirality(handCloud("Right"))?.label, "Right");
+assert.equal(landmarkChirality(handCloud("Left"))?.label, "Left");
+assert.equal(fuseHandedness("Left", 0.4, handCloud("Right")).label, "Right");
+assert.equal(fuseHandedness("Left", 0.92, handCloud("Right")).label, "Left");
+console.log("ok  skeleton chirality knows left from right");
+
+assert.equal(MAX_TRACKED_HANDS, 2);
+
+{
+  const pair = selectPersonHands([at(0.3, "Left"), at(0.58, "Right")]);
+  assert.equal(pair.length, 2, "one person's two hands stay");
+}
+
+{
+  const mixed = selectPersonHands([
+    { wrist: { x: 0.16, y: 0.22, z: 0 }, label: "Left" },
+    { wrist: { x: 0.84, y: 0.78, z: 0 }, label: "Right" },
+  ]);
+  assert.equal(mixed.length, 1, "two strangers each showing one hand become one");
+}
+
+{
+  const four = selectPersonHands([
+    { wrist: { x: 0.28, y: 0.62, z: 0 }, label: "Left" },
+    { wrist: { x: 0.52, y: 0.6, z: 0 }, label: "Right" },
+    { wrist: { x: 0.24, y: 0.18, z: 0 }, label: "Left" },
+    { wrist: { x: 0.48, y: 0.2, z: 0 }, label: "Right" },
+  ]);
+  assert.equal(four.length, 2);
+  const ys = four.map((hand) => hand.wrist.y);
+  assert.ok(
+    ys.every((y) => y > 0.5) || ys.every((y) => y < 0.35),
+    "the pair is one person, not one hand from each",
+  );
+}
+
+{
+  const locked = selectPersonHands(
+    [
+      { wrist: { x: 0.28, y: 0.62, z: 0 }, label: "Left" },
+      { wrist: { x: 0.52, y: 0.6, z: 0 }, label: "Right" },
+      { wrist: { x: 0.24, y: 0.18, z: 0 }, label: "Left" },
+      { wrist: { x: 0.48, y: 0.2, z: 0 }, label: "Right" },
+    ],
+    last(0.3, 0.5),
+  );
+  assert.equal(locked.length, 2);
+  assert.ok(
+    locked.every((hand) => hand.wrist.y > 0.5),
+    "the already-tracked person keeps the gloves",
+  );
+}
+console.log("ok  only one person, at most two hands");
+
+assert.equal(anatomicalHandedness("Left", true), "Left");
+assert.equal(anatomicalHandedness("Left", false), "Right");
+assert.equal(anatomicalHandedness("Right", true), "Right");
+console.log("ok  handedness follows the explicit mirror contract");
 
 // 1. Nothing tracked yet: the label decides.
 {
@@ -50,7 +129,16 @@ const last = (l?: number, r?: number) => {
 {
   const out = assignHands([at(0.3, "Left"), at(0.7, "Left")], last(), R);
   assert.equal(out.size, 2);
+  assert.equal(out.get("Left")!.wrist.x, 0.3, "leftmost duplicate sits in Left");
+  assert.equal(out.get("Right")!.wrist.x, 0.7, "rightmost duplicate sits in Right");
   console.log("ok  duplicate labels on a fresh frame keep both hands");
+}
+
+{
+  const out = assignHands([at(0.28, "Right"), at(0.74, "Right")], last(), R);
+  assert.equal(out.get("Left")!.wrist.x, 0.28);
+  assert.equal(out.get("Right")!.wrist.x, 0.74);
+  console.log("ok  two Right labels still split by side of the frame");
 }
 
 // 5. A hand that jumps further than the match radius is treated as a new hand,
@@ -95,6 +183,32 @@ const last = (l?: number, r?: number) => {
   assert.equal(out.get("Right")!.wrist.x, 0.58, "right keeps the nearest");
   assert.equal(out.size, 2, "the other detection still gets a hand");
   console.log("ok  the closest pair wins over hand order");
+}
+
+// 9. At the exact crossing point, last position alone would swap identities.
+//    Motion prediction keeps each anatomical hand travelling in its direction.
+{
+  const memory = new Map<Hd, {
+    wrist: { x: number; y: number; z: number };
+    velocity: { x: number; y: number; z: number };
+  }>([
+    ["Left", {
+      wrist: { x: 0.48, y: 0.5, z: 0 },
+      velocity: { x: 0.08, y: 0, z: 0 },
+    }],
+    ["Right", {
+      wrist: { x: 0.52, y: 0.5, z: 0 },
+      velocity: { x: -0.08, y: 0, z: 0 },
+    }],
+  ]);
+  const out = assignHands(
+    [at(0.42, "Right"), at(0.58, "Left")],
+    memory,
+    R,
+  );
+  assert.equal(out.get("Left")!.wrist.x, 0.58);
+  assert.equal(out.get("Right")!.wrist.x, 0.42);
+  console.log("ok  crossing hands keep identity from motion");
 }
 
 console.log("\nall assignment tests passed");

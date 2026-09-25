@@ -28,13 +28,27 @@ export const CRANK_ARM = 1.05;
 export function Prop({
   kind,
   position = [0, 0],
+  lift = 0,
+  scale = 1,
+  showCargo = true,
+  shake,
 }: {
   kind: PropKind;
   position?: readonly [number, number];
+  /** Seat a leftover on another piece instead of on the table. */
+  lift?: number;
+  scale?: number;
+  /** Hide bowl contents after a dump / empty vessel. */
+  showCargo?: boolean;
+  shake?: RefObject<number>;
 }) {
   return (
-    <group position={[position[0], position[1], 0]}>
-      {kind === "mat" ? <Mat /> : <KitPiece kind={kind} />}
+    <group position={[position[0], position[1], lift]} scale={scale}>
+      {kind === "mat" ? (
+        <Mat />
+      ) : (
+        <KitPiece kind={kind} showCargo={showCargo} shake={shake} />
+      )}
     </group>
   );
 }

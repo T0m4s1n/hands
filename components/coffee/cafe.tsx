@@ -7,37 +7,27 @@ import { buildSeats, Crowd } from "./crowd";
 import { KitModel } from "./kit";
 
 /**
- * The room the counter stands in: a stage with an audience behind it.
+ * The room behind the counter — quiet café depth, not a packed hall.
  *
- * The counter is where the game happens, and everything else exists to make
- * that spot feel like somewhere worth standing. A raked crowd does that better
- * than a back wall of furniture did — it gives the camera a reason to be where
- * it is, it fills the frame with something that moves, and it gives the player
- * somebody to be doing this in front of.
- *
- * None of it is interactive, so none of it casts shadows or is measured for
- * collision. All of it is Kenney's CC0 kits; see the credits beside the models.
+ * The play space is the bar. Everything behind it should say “you’re in a
+ * coffee shop” without competing for attention: a warm wall, soft windows,
+ * a thin row of distant guests, and décor in the wings. Dense crowds and
+ * hanging banners used to look like UI and stole the frame.
  */
 
 /** Where the floor sits, taking the counter for bar height. */
 export const FLOOR_Z = -3.1;
-/** How far back the wall behind the seating stands. */
-const WALL_Y = 30.0;
-/** Where the first row of the audience begins. */
-const FRONT_Y = 10.4;
-/** How far back each row sits, and how much higher. */
-const ROW_DEPTH = 2.9;
-const ROW_RISE = 1.25;
-const ROWS = 6;
-const PER_ROW = 21;
-/**
- * Close enough that neighbours overlap. Spaced out, the same figures read as a
- * line of separate posts; overlapping, they read as one mass of people, which
- * is the whole difference between a crowd and a row.
- */
-const SPACING = 1.8;
-/** How wide the risers and the backdrop run. */
-const HALL = 23;
+/** Back wall — closer than the old arena so the room feels intimate. */
+const WALL_Y = 18.5;
+/** First (and only dense) guest row, well behind the bar. */
+const FRONT_Y = 12.2;
+const ROW_DEPTH = 2.6;
+const ROW_RISE = 0.85;
+/** Two thin rows — suggestion of people, not a wall of bottles. */
+const ROWS = 2;
+const PER_ROW = 9;
+const SPACING = 2.35;
+const HALL = 18;
 
 const ROOM = "cafe";
 
@@ -48,7 +38,6 @@ type Placed = {
   yaw?: number;
 };
 
-/** Décor never casts shadows and never needs to be looked up by name. */
 function Decor({ file, size, at, yaw = 0 }: Placed) {
   return (
     <group position={[at[0], at[1], at[2]]}>
@@ -57,134 +46,143 @@ function Decor({ file, size, at, yaw = 0 }: Placed) {
   );
 }
 
-/**
- * What is left of the café, pushed out to the wings so the middle of the frame
- * belongs to the crowd. A few plants and shelves at the edges are enough to say
- * the stage is in a coffee bar rather than a sports hall.
- */
+/** Wings frame the bar; kept sparse so the middle stays for gameplay. */
 const WINGS: readonly Placed[] = [
-  { file: "bookcaseOpen.glb", size: 5.6, at: [-15.5, 2.0, FLOOR_Z], yaw: 1.5 },
-  { file: "bookcaseClosedDoors.glb", size: 4.4, at: [15.8, 2.4, FLOOR_Z], yaw: -1.5 },
-  { file: "pottedPlant.glb", size: 3.2, at: [-12.4, 1.2, FLOOR_Z] },
-  { file: "pottedPlant.glb", size: 2.8, at: [12.6, 1.4, FLOOR_Z], yaw: 0.6 },
-  { file: "plantSmall2.glb", size: 1.6, at: [-14.2, 4.6, FLOOR_Z] },
-  { file: "plantSmall3.glb", size: 1.5, at: [14.4, 4.8, FLOOR_Z], yaw: 1.1 },
-  { file: "coatRackStanding.glb", size: 3.6, at: [-17.6, 4.4, FLOOR_Z], yaw: 0.4 },
-  { file: "barrel.glb", size: 2.4, at: [-13.0, 5.4, FLOOR_Z], yaw: 0.4 },
-  { file: "cardboardBoxClosed.glb", size: 1.9, at: [13.2, 5.6, FLOOR_Z], yaw: -0.5 },
-  { file: "trashcan.glb", size: 1.6, at: [16.8, 5.2, FLOOR_Z] },
-  { file: "lampSquareFloor.glb", size: 4.2, at: [-18.6, 1.0, FLOOR_Z], yaw: -0.5 },
-  // Two stools left at the ends of the bar, where they catch the frame edge.
-  { file: "stoolBar.glb", size: 2.6, at: [-8.6, -6.2, FLOOR_Z] },
-  { file: "stoolBar.glb", size: 2.6, at: [8.6, -6.2, FLOOR_Z] },
+  { file: "bookcaseOpen.glb", size: 4.8, at: [-12.8, 3.2, FLOOR_Z], yaw: 1.45 },
+  { file: "bookcaseClosedDoors.glb", size: 3.8, at: [13.0, 3.4, FLOOR_Z], yaw: -1.45 },
+  { file: "pottedPlant.glb", size: 2.8, at: [-10.2, 1.8, FLOOR_Z] },
+  { file: "pottedPlant.glb", size: 2.4, at: [10.4, 2.0, FLOOR_Z], yaw: 0.6 },
+  { file: "barrel.glb", size: 2.0, at: [-11.2, 5.0, FLOOR_Z], yaw: 0.4 },
+  { file: "stoolBar.glb", size: 2.4, at: [-7.6, -5.8, FLOOR_Z] },
+  { file: "stoolBar.glb", size: 2.4, at: [7.6, -5.8, FLOOR_Z] },
+];
+
+/** Lounge behind the rail — tables and seats so the crowd sits in a café. */
+const LOUNGE: readonly Placed[] = [
+  { file: "tableRound.glb", size: 2.35, at: [-5.4, 11.6, FLOOR_Z], yaw: 0.2 },
+  { file: "tableRound.glb", size: 2.2, at: [0.15, 12.4, FLOOR_Z], yaw: -0.3 },
+  { file: "tableRound.glb", size: 2.3, at: [5.6, 11.5, FLOOR_Z], yaw: 0.5 },
+  { file: "chairRounded.glb", size: 1.55, at: [-6.4, 12.5, FLOOR_Z], yaw: 0.4 },
+  { file: "chairRounded.glb", size: 1.5, at: [-4.3, 12.4, FLOOR_Z], yaw: -0.5 },
+  { file: "chairRounded.glb", size: 1.5, at: [-0.85, 13.3, FLOOR_Z], yaw: 0.15 },
+  { file: "chairRounded.glb", size: 1.48, at: [1.15, 13.2, FLOOR_Z], yaw: -0.35 },
+  { file: "chairRounded.glb", size: 1.52, at: [4.55, 12.4, FLOOR_Z], yaw: 0.55 },
+  { file: "chairRounded.glb", size: 1.5, at: [6.55, 12.3, FLOOR_Z], yaw: -0.45 },
+  { file: "loungeSofa.glb", size: 3.4, at: [8.8, 15.2, FLOOR_Z], yaw: -1.15 },
+  { file: "loungeChair.glb", size: 1.85, at: [-9.0, 14.8, FLOOR_Z], yaw: 1.05 },
+  { file: "sideTable.glb", size: 1.35, at: [-8.1, 15.6, FLOOR_Z], yaw: 0.4 },
+  { file: "lampRoundTable.glb", size: 1.45, at: [-8.1, 15.6, FLOOR_Z + 0.85] },
+  { file: "rugRectangle.glb", size: 7.2, at: [0, 13.0, FLOOR_Z + 0.09], yaw: 0.04 },
+  { file: "pottedPlant.glb", size: 2.2, at: [-10.6, 16.2, FLOOR_Z], yaw: 0.3 },
+  { file: "pottedPlant.glb", size: 2.0, at: [10.4, 16.0, FLOOR_Z], yaw: -0.4 },
+  { file: "plantSmall2.glb", size: 1.1, at: [-5.4, 11.6, FLOOR_Z + 1.15] },
+  { file: "mug.glb", size: 0.42, at: [0.35, 12.35, FLOOR_Z + 1.12], yaw: 0.6 },
+  { file: "cup-tea.glb", size: 0.4, at: [5.35, 11.45, FLOOR_Z + 1.1], yaw: -0.3 },
 ];
 
 for (const item of WINGS) useGLTF.preload(`/models/${ROOM}/${item.file}`);
+for (const item of LOUNGE) useGLTF.preload(`/models/${ROOM}/${item.file}`);
 
 /**
- * A hanging banner, painted rather than modelled.
- *
- * Cloth with lettering on it is the one thing in this room that has to say a
- * word, and a word is a texture. Drawing it on a canvas at startup means no
- * image to ship, no font to load and no atlas to keep in step with the text —
- * changing what the banner says is changing a string.
+ * One quiet brand mark on the back wall — not three menu-sized banners.
  */
-function bannerTexture(text: string): CanvasTexture {
+function brandTexture(): CanvasTexture {
   const canvas = document.createElement("canvas");
-  // Matched to the shape of the cloth it goes on. A square texture stretched
-  // over a wide banner squashes the lettering, which is what happened first.
-  canvas.width = 640;
-  canvas.height = 200;
+  canvas.width = 512;
+  canvas.height = 160;
   const ink = canvas.getContext("2d");
-
   if (ink) {
-    ink.fillStyle = "#8f1824";
-    ink.fillRect(0, 0, 640, 200);
+    ink.clearRect(0, 0, 512, 160);
+    ink.fillStyle = "rgba(143, 24, 36, 0.92)";
+    ink.fillRect(24, 24, 464, 112);
     ink.strokeStyle = "#f5990a";
     ink.lineWidth = 3;
-    ink.strokeRect(16, 16, 608, 168);
-
-    // A cup on the left, drawn the way the interface draws its own.
-    ink.strokeStyle = "#f0e8d9";
-    ink.lineWidth = 8;
-    ink.lineJoin = "round";
-    ink.lineCap = "round";
-    ink.beginPath();
-    ink.moveTo(74, 92);
-    ink.lineTo(154, 92);
-    ink.lineTo(154, 118);
-    ink.arc(114, 118, 40, 0, Math.PI);
-    ink.lineTo(74, 92);
-    ink.stroke();
-    ink.beginPath();
-    ink.arc(162, 106, 20, -Math.PI / 2, Math.PI / 2);
-    ink.stroke();
-    ink.lineWidth = 6;
-    for (const x of [94, 114, 134]) {
-      ink.beginPath();
-      ink.moveTo(x, 78);
-      ink.quadraticCurveTo(x + 12, 64, x, 50);
-      ink.stroke();
-    }
-
+    ink.strokeRect(24, 24, 464, 112);
+    const family =
+      (typeof document !== "undefined" &&
+        getComputedStyle(document.documentElement)
+          .getPropertyValue("--font-poppins")
+          .trim()) ||
+      "Poppins";
     ink.fillStyle = "#f0e8d9";
-    ink.font = "600 58px system-ui, -apple-system, sans-serif";
+    ink.font = `700 42px ${family}, Poppins, system-ui, sans-serif`;
     ink.textAlign = "center";
     ink.textBaseline = "middle";
-    ink.fillText(text, 400, 104);
+    ink.fillText("LA MEJOR TAZA", 256, 84);
   }
-
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
   return texture;
 }
 
-/**
- * Strung along the barrier at the front of the audience.
- *
- * Hung high and far back they were never seen, and the arithmetic says why:
- * the camera sits low and looks down, so at the crowd's distance the top of
- * the frame is only a couple of units off the floor. Anything above that is
- * outside the picture no matter how big it is. On the barrier they are inside
- * the frame, they read against the dark mass of people behind them, and it is
- * where a hall hangs its hoardings anyway.
- */
-const BANNER_Y = 8.2;
-const BANNERS: readonly { text: string; x: number; z: number }[] = [
-  { text: "CAFÉ", x: -8.4, z: -1.35 },
-  { text: "BARISTA", x: 0, z: -1.35 },
-  { text: "TINTO", x: 8.4, z: -1.35 },
-];
-
-function Banners() {
-  const textures = useMemo(
-    () => BANNERS.map((banner) => bannerTexture(banner.text)),
-    [],
-  );
-
+function WindowBay({
+  x,
+  z,
+  w,
+  h,
+}: {
+  x: number;
+  z: number;
+  w: number;
+  h: number;
+}) {
+  const y = WALL_Y - 0.06;
+  const frame = 0.16;
   return (
-    <group>
-      {BANNERS.map((banner, i) => (
-        <group key={banner.text} position={[banner.x, BANNER_Y, banner.z]}>
-          {/* The cloth. Lit from its own face, because a banner at the back of
-              a dark hall that is not lit is not a banner, it is a rectangle. */}
-          <mesh rotation={[Math.PI / 2, 0, 0]}>
-            <planeGeometry args={[6.4, 2.0]} />
-            <meshStandardMaterial
-              map={textures[i]}
-              roughness={0.95}
-              emissive="#ffffff"
-              emissiveMap={textures[i]}
-              emissiveIntensity={0.3}
-            />
-          </mesh>
-          {/* The rail it is lashed to. */}
-          <mesh position={[0, 0, 1.1]} rotation={[0, Math.PI / 2, 0]}>
-            <cylinderGeometry args={[0.07, 0.07, 6.8, 8]} />
-            <meshStandardMaterial color="#f5990a" roughness={0.4} metalness={0.6} />
-          </mesh>
-        </group>
-      ))}
+    <group position={[x, y, z]}>
+      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
+        <planeGeometry args={[w, h]} />
+        <meshBasicMaterial color="#140c18" />
+      </mesh>
+      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
+        <planeGeometry args={[w * 0.9, h * 0.9]} />
+        <meshBasicMaterial
+          color="#ffb070"
+          transparent
+          opacity={0.2}
+          depthWrite={false}
+          blending={AdditiveBlending}
+        />
+      </mesh>
+      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+        <planeGeometry args={[w * 0.55, h * 0.55]} />
+        <meshBasicMaterial
+          color="#ffe6c4"
+          transparent
+          opacity={0.1}
+          depthWrite={false}
+          blending={AdditiveBlending}
+        />
+      </mesh>
+      {/* Frame and mullions — a real window, not a floating glow. */}
+      <mesh position={[0, 0, h / 2]}>
+        <boxGeometry args={[w + frame, 0.14, frame]} />
+        <meshStandardMaterial color="#3d1c16" roughness={0.7} />
+      </mesh>
+      <mesh position={[0, 0, -h / 2]}>
+        <boxGeometry args={[w + frame, 0.14, frame]} />
+        <meshStandardMaterial color="#3d1c16" roughness={0.7} />
+      </mesh>
+      <mesh position={[-w / 2, 0, 0]}>
+        <boxGeometry args={[frame, 0.14, h]} />
+        <meshStandardMaterial color="#3d1c16" roughness={0.7} />
+      </mesh>
+      <mesh position={[w / 2, 0, 0]}>
+        <boxGeometry args={[frame, 0.14, h]} />
+        <meshStandardMaterial color="#3d1c16" roughness={0.7} />
+      </mesh>
+      <mesh>
+        <boxGeometry args={[w * 0.045, 0.1, h * 0.92]} />
+        <meshStandardMaterial color="#5a2a1c" roughness={0.65} />
+      </mesh>
+      <mesh>
+        <boxGeometry args={[w * 0.92, 0.1, h * 0.045]} />
+        <meshStandardMaterial color="#5a2a1c" roughness={0.65} />
+      </mesh>
+      <mesh position={[0, -0.08, -h / 2 - 0.12]}>
+        <boxGeometry args={[w + 0.35, 0.28, 0.16]} />
+        <meshStandardMaterial color="#6a3a22" roughness={0.6} />
+      </mesh>
     </group>
   );
 }
@@ -203,125 +201,204 @@ export function Cafe() {
       }),
     [],
   );
+  const brand = useMemo(() => brandTexture(), []);
 
   return (
     <group>
-      {/* Floor. A plane rather than tiled models: it is a flat colour either
-          way, and one mesh instead of a hundred. */}
-      <mesh position={[0, 3, FLOOR_Z]} receiveShadow>
-        <planeGeometry args={[70, 60]} />
-        <meshStandardMaterial color="#3c1a16" roughness={0.9} metalness={0.02} />
+      {/* Floor — warm wood tone, quiet. */}
+      <mesh position={[0, 4, FLOOR_Z]} receiveShadow>
+        <planeGeometry args={[48, 36]} />
+        <meshStandardMaterial color="#3d1e18" roughness={0.9} metalness={0.02} />
       </mesh>
 
-      {/*
-        The rake, as one dark slope rather than a flight of steps. Nobody can
-        see the floor under a crowd in the dark, and the boxes that were there
-        before were the biggest, brightest thing in the frame.
-      */}
-      {Array.from({ length: ROWS }, (_, row) =>
-        row === 0 ? null : (
-          <mesh
-            key={`riser-${row}`}
-            position={[
-              0,
-              FRONT_Y + row * ROW_DEPTH,
-              FLOOR_Z + (row * ROW_RISE) / 2,
-            ]}
-          >
-            <boxGeometry args={[HALL * 2, ROW_DEPTH + 0.6, row * ROW_RISE]} />
-            <meshStandardMaterial color="#1e0a10" roughness={1} />
-          </mesh>
-        ),
-      )}
-
-      <Crowd seats={seats} />
-
-      {/* A rail between the audience and the counter. */}
-      <mesh position={[0, FRONT_Y - 2.6, FLOOR_Z + 1.5]}>
-        <boxGeometry args={[HALL * 1.8, 0.16, 0.16]} />
-        <meshStandardMaterial color="#f5990a" roughness={0.34} metalness={0.7} />
+      {/* Lounge boards — a café room, not a black pit under the guests. */}
+      <mesh position={[0, FRONT_Y + 1.4, FLOOR_Z + 0.04]}>
+        <boxGeometry args={[HALL * 1.55, 7.2, 0.08]} />
+        <meshStandardMaterial color="#4a281c" roughness={0.86} />
       </mesh>
-      {[-1, 1].map((side) => (
+      {[-2.4, -0.8, 0.8, 2.4].map((offset, i) => (
         <mesh
-          key={`post-${side}`}
-          position={[side * HALL * 0.8, FRONT_Y - 2.6, FLOOR_Z + 0.75]}
+          key={`plank-${i}`}
+          position={[0, FRONT_Y + 1.4 + offset, FLOOR_Z + 0.055]}
         >
-          <boxGeometry args={[0.16, 0.16, 1.5]} />
-          <meshStandardMaterial color="#f5990a" roughness={0.34} metalness={0.7} />
+          <boxGeometry args={[HALL * 1.5, 0.08, 0.02]} />
+          <meshStandardMaterial
+            color={i % 2 === 0 ? "#3a1e16" : "#542c20"}
+            roughness={0.9}
+          />
         </mesh>
       ))}
 
-      {/* A dark backdrop for the crowd to be read against. Without something
-          behind them the far rows dissolve into the background colour. */}
-      <mesh position={[0, WALL_Y, FLOOR_Z + 9]} rotation={[Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[HALL * 4, 26]} />
-        <meshStandardMaterial color="#16040a" roughness={1} />
+      {/* Side walls so the hall has corners. */}
+      <mesh
+        position={[-HALL * 1.05, 8, FLOOR_Z + 6]}
+        rotation={[Math.PI / 2, 0, Math.PI / 2]}
+      >
+        <planeGeometry args={[22, 14]} />
+        <meshStandardMaterial color="#241014" roughness={1} />
+      </mesh>
+      <mesh
+        position={[HALL * 1.05, 8, FLOOR_Z + 6]}
+        rotation={[Math.PI / 2, 0, -Math.PI / 2]}
+      >
+        <planeGeometry args={[22, 14]} />
+        <meshStandardMaterial color="#241014" roughness={1} />
       </mesh>
 
-      {/*
-        Haze in the beams.
+      {/* Ceiling — closes the room instead of opening onto the void. */}
+      <mesh position={[0, 10, FLOOR_Z + 11.2]} rotation={[Math.PI, 0, 0]}>
+        <planeGeometry args={[HALL * 2.2, 28]} />
+        <meshStandardMaterial color="#14080c" roughness={1} />
+      </mesh>
 
-        This is the one addition that does more for how the room looks than
-        anything else in it. A cone of faint, additive light under each lamp
-        stands in for dust in the air, and it is what turns three glowing bulbs
-        into three shafts of light falling on a stage. It writes no depth, so
-        it never hides anything behind it.
-      */}
-      {[-5.2, 0, 5.2].map((x) => (
+      {/* Back plaster + wine wash + wood wainscot. */}
+      <mesh position={[0, WALL_Y, FLOOR_Z + 7]} rotation={[Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[HALL * 2.4, 18]} />
+        <meshStandardMaterial color="#2a1218" roughness={0.95} />
+      </mesh>
+      <mesh
+        position={[0, WALL_Y - 0.03, FLOOR_Z + 4.2]}
+        rotation={[Math.PI / 2, 0, 0]}
+      >
+        <planeGeometry args={[HALL * 1.9, 9]} />
+        <meshBasicMaterial
+          color="#7a2430"
+          transparent
+          opacity={0.22}
+          depthWrite={false}
+        />
+      </mesh>
+      <mesh position={[0, WALL_Y - 0.05, FLOOR_Z + 1.55]}>
+        <boxGeometry args={[HALL * 2.15, 0.22, 3.1]} />
+        <meshStandardMaterial color="#4a241c" roughness={0.78} />
+      </mesh>
+      <mesh position={[0, WALL_Y - 0.08, FLOOR_Z + 3.12]}>
+        <boxGeometry args={[HALL * 2.15, 0.08, 0.08]} />
+        <meshStandardMaterial color="#c4782a" roughness={0.4} metalness={0.45} />
+      </mesh>
+
+      <WindowBay x={-6.8} z={FLOOR_Z + 5.4} w={4.4} h={3.6} />
+      <WindowBay x={6.8} z={FLOOR_Z + 5.4} w={4.4} h={3.6} />
+
+      {/* Center alcove for the brand, between the windows. */}
+      <mesh position={[0, WALL_Y - 0.1, FLOOR_Z + 2.55]}>
+        <boxGeometry args={[6.2, 0.18, 3.4]} />
+        <meshStandardMaterial color="#1c0a10" roughness={0.9} />
+      </mesh>
+      <mesh
+        position={[0, WALL_Y - 0.22, FLOOR_Z + 2.35]}
+        rotation={[Math.PI / 2, 0, 0]}
+      >
+        <planeGeometry args={[5.2, 1.6]} />
+        <meshStandardMaterial
+          map={brand}
+          transparent
+          roughness={0.9}
+          emissive="#ffffff"
+          emissiveMap={brand}
+          emissiveIntensity={0.32}
+        />
+      </mesh>
+
+      {/* String of warm bulbs along the back wall. */}
+      {[-10, -7.5, -5, -2.5, 0, 2.5, 5, 7.5, 10].map((x, i) => (
+        <mesh key={`bulb-${i}`} position={[x, WALL_Y - 0.35, FLOOR_Z + 7.15]}>
+          <sphereGeometry args={[0.09, 8, 6]} />
+          <meshStandardMaterial
+            color="#fff0cf"
+            emissive="#ffc46b"
+            emissiveIntensity={1.8 + (i % 3) * 0.4}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
+
+      <pointLight
+        position={[0, FRONT_Y + 0.6, 3.6]}
+        intensity={16}
+        distance={14}
+        decay={2}
+        color="#ffc46b"
+      />
+      <pointLight
+        position={[-6.8, WALL_Y - 1.2, 4.6]}
+        intensity={9}
+        distance={11}
+        decay={2}
+        color="#ffb070"
+      />
+      <pointLight
+        position={[6.8, WALL_Y - 1.2, 4.6]}
+        intensity={9}
+        distance={11}
+        decay={2}
+        color="#ffb070"
+      />
+
+      <group scale={[0.92, 0.92, 0.92]}>
+        <Crowd seats={seats} />
+      </group>
+
+      {/* Divider rail with posts — a bar, not a floating stick. */}
+      {[-7.8, 0, 7.8].map((x) => (
+        <mesh key={`post-${x}`} position={[x, FRONT_Y - 3.4, FLOOR_Z + 0.55]}>
+          <boxGeometry args={[0.12, 0.12, 1.1]} />
+          <meshStandardMaterial color="#3d1c16" roughness={0.7} />
+        </mesh>
+      ))}
+      <mesh position={[0, FRONT_Y - 3.4, FLOOR_Z + 1.15]}>
+        <boxGeometry args={[HALL * 1.15, 0.12, 0.1]} />
+        <meshStandardMaterial color="#c4782a" roughness={0.4} metalness={0.55} />
+      </mesh>
+
+      {[-4.4, 0, 4.4].map((x) => (
         <mesh
           key={`beam-${x}`}
-          // Apex at the lamp, mouth on the counter. Turned the other way it
-          // was a funnel widening into the ceiling, which is why the first
-          // attempt whited out the top of the frame.
-          position={[x, 1.6, 1.7]}
+          position={[x, 1.4, 1.5]}
           rotation={[Math.PI / 2, 0, 0]}
         >
-          <coneGeometry args={[2.1, 4.6, 20, 1, true]} />
+          <coneGeometry args={[1.7, 4.0, 18, 1, true]} />
           <meshBasicMaterial
             color="#ffc46b"
             transparent
-            opacity={0.028}
+            opacity={0.022}
             blending={AdditiveBlending}
             depthWrite={false}
           />
         </mesh>
       ))}
 
-      {/*
-        Little warm lights away in the dark behind the audience — the far end of
-        the room, other tables, whatever the player cares to read them as. They
-        give the black back there a depth it cannot get from geometry.
-      */}
-      {Array.from({ length: 26 }, (_, i) => {
-        const a = Math.sin(i * 12.9898) * 43758.5453;
-        const b = Math.sin(i * 78.233) * 12345.678;
-        const x = ((a - Math.floor(a)) - 0.5) * 46;
-        const y = 26 + (b - Math.floor(b)) * 14;
-        const z = FLOOR_Z + 1.5 + ((a * 7 - Math.floor(a * 7))) * 7;
-        return (
-          <mesh key={`spark-${i}`} position={[x, y, z]}>
-            <sphereGeometry args={[0.16, 6, 5]} />
-            <meshBasicMaterial color="#f5990a" transparent opacity={0.75} />
-          </mesh>
-        );
-      })}
-
-      <Banners />
-
-      {WINGS.map((item, i) => (
-        <Decor key={`${item.file}-${i}`} {...item} />
+      {[
+        [-5.4, 11.6],
+        [0.15, 12.4],
+        [5.6, 11.5],
+      ].map(([x, y], i) => (
+        <mesh key={`candle-${i}`} position={[x, y, FLOOR_Z + 1.42]}>
+          <sphereGeometry args={[0.1, 8, 6]} />
+          <meshStandardMaterial
+            color="#fff0cf"
+            emissive="#f5990a"
+            emissiveIntensity={2.2}
+            toneMapped={false}
+          />
+        </mesh>
       ))}
 
-      {/* Stage lights over the counter. The glow is the lamp; the light itself
-          is rigged in the scene so the two can be tuned apart. */}
-      {[-5.2, 0, 5.2].map((x) => (
-        <group key={`pendant-${x}`} position={[x, 1.6, 4.2]}>
-          <mesh position={[0, 0, 2.3]} rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.035, 0.035, 4.6, 6]} />
+      {WINGS.map((item, i) => (
+        <Decor key={`wing-${item.file}-${i}`} {...item} />
+      ))}
+      {LOUNGE.map((item, i) => (
+        <Decor key={`lounge-${item.file}-${i}`} {...item} />
+      ))}
+
+      {[-4.4, 4.4].map((x) => (
+        <group key={`pendant-${x}`} position={[x, 1.4, 4.0]}>
+          <mesh position={[0, 0, 2.1]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.03, 0.03, 4.2, 8]} />
             <meshStandardMaterial color="#2a1c12" roughness={0.8} />
           </mesh>
           <mesh rotation={[-Math.PI / 2, 0, 0]}>
-            <coneGeometry args={[0.62, 0.7, 20, 1, true]} />
+            <coneGeometry args={[0.52, 0.62, 20, 1, true]} />
             <meshStandardMaterial
               color="#8f1824"
               roughness={0.45}
@@ -329,14 +406,39 @@ export function Cafe() {
               side={2}
             />
           </mesh>
-          {/* The hot filament, which is what makes it read as lit rather than
-              as a brown cone hanging in the dark. */}
-          <mesh position={[0, 0, -0.26]}>
-            <sphereGeometry args={[0.17, 12, 10]} />
+          <mesh position={[0, 0, -0.22]}>
+            <sphereGeometry args={[0.15, 14, 12]} />
             <meshStandardMaterial
               color="#fff0cf"
               emissive="#ffc46b"
-              emissiveIntensity={3.2}
+              emissiveIntensity={2.8}
+              toneMapped={false}
+            />
+          </mesh>
+        </group>
+      ))}
+
+      {[-5.4, 0.15, 5.6].map((x) => (
+        <group key={`lounge-lamp-${x}`} position={[x, 12.2, 3.35]}>
+          <mesh position={[0, 0, 1.15]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.02, 0.02, 2.3, 8]} />
+            <meshStandardMaterial color="#2a1c12" roughness={0.8} />
+          </mesh>
+          <mesh rotation={[-Math.PI / 2, 0, 0]}>
+            <coneGeometry args={[0.32, 0.4, 16, 1, true]} />
+            <meshStandardMaterial
+              color="#8f1824"
+              roughness={0.5}
+              metalness={0.4}
+              side={2}
+            />
+          </mesh>
+          <mesh position={[0, 0, -0.14]}>
+            <sphereGeometry args={[0.1, 10, 8]} />
+            <meshStandardMaterial
+              color="#fff0cf"
+              emissive="#ffc46b"
+              emissiveIntensity={2.2}
               toneMapped={false}
             />
           </mesh>

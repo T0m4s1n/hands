@@ -11,17 +11,17 @@ import type { LiquidKind } from "./liquid";
 
 /** Each gesture the hands can be asked for. */
 export type StageKind =
-  /** Pinch it up, carry it, let go inside the ring. Scored on where it lands. */
+  /** Carry it onto the destination. Scored if it lands on that object. */
   | "place"
-  /** Take the handle and turn it in circles. Scored on how far you turned. */
+  /** Turn the handle around the grinder. Scored on how far you turned. */
   | "crank"
-  /** Keep it over the ring while something fills. Scored on the level. */
+  /** Keep it on the station while something fills. Scored on the level. */
   | "hold"
-  /** Press straight down onto the target. Scored on how evenly you pressed. */
+  /** Press down on the basket. Scored on how evenly you pressed. */
   | "tamp"
   /** Grip and shake. Scored on how many times you reversed direction. */
   | "shake"
-  /** Hold it over the ring and roll your wrist to tip it. Scored on the pour. */
+  /** Tip it over the vessel. Scored on the pour, not on a painted ring. */
   | "tilt";
 
 export type PropKind =
@@ -49,7 +49,7 @@ export type Stage = {
   item: readonly [number, number];
   /** Where it has to go, or the pivot for a crank. */
   target: readonly [number, number];
-  /** How near counts as inside the ring. */
+  /** Visual hint size. Scoring uses the destination's real station. */
   radius: number;
   /**
    * The amount to aim for, in whatever the gesture is measured in: radians
@@ -72,16 +72,47 @@ export type Stage = {
   vessel?: PropKind;
   /** What is being poured. Coffee unless said otherwise. */
   liquid?: LiquidKind;
+  /**
+   * Extra gesture on a pour. A heart is the classic barista finish: zigzag
+   * the jug while the milk flows, then cut through the middle.
+   */
+  flourish?: "heart";
 };
 
 export type Recipe = {
   id: string;
   name: string;
   blurb: string;
+  /** Two sentences for the menu preview, longer than the blurb. */
+  pitch: string;
   /** Roast colour for the cup and the menu card. */
   colour: string;
   stages: readonly Stage[];
 };
+
+/** Cut-out photograph for the homepage panels. */
+export function recipePortrait(id: string): string {
+  return `/cafes/${id}.png`;
+}
+
+/** Full scene used by the in-game carta, not a cut-out. */
+export function recipeHero(id: string): string {
+  return `/cafes/${id}-hero.jpg`;
+}
+
+/**
+ * How a mark reads as stars. Five is the band you were asked for; zero is
+ * a stage that never started. The steps match `grade()`, so a "Muy bueno"
+ * is four stars and not a surprise.
+ */
+export function stars(mark: number): number {
+  if (mark >= 0.9) return 5;
+  if (mark >= 0.75) return 4;
+  if (mark >= 0.6) return 3;
+  if (mark >= 0.4) return 2;
+  if (mark > 0) return 1;
+  return 0;
+}
 
 const GRINDER: readonly [number, number] = [1.85, 0.1];
 const STATION: readonly [number, number] = [0, 0.1];
@@ -96,12 +127,14 @@ const TINTO: Recipe = {
   id: "tinto",
   name: "Tinto",
   blurb: "Filtrado, suave. Buen sitio para empezar.",
+  pitch:
+    "Un filtrado de casa. Mueles, vacías el molido en el gotero, viertes con pulso y sirves. El más calmo de los tres: un mal vertido se nota, y no se repite.",
   colour: "#4a2a16",
   stages: [
     {
       id: "dose",
       title: "Dosifica",
-      instruction: "Pellizca la cuchara con granos y suéltala sobre el molino.",
+      instruction: "Lleva la cuchara llena y suéltala sobre el molino.",
       kind: "place",
       item: LEFT_REST,
       target: GRINDER,
@@ -113,7 +146,7 @@ const TINTO: Recipe = {
     {
       id: "grind",
       title: "Muele",
-      instruction: "Toma la manivela y gírala siguiendo el círculo.",
+      instruction: "Gira la manivela alrededor del molino.",
       kind: "crank",
       item: [1.05, 0],
       target: [0, 0],
@@ -126,10 +159,10 @@ const TINTO: Recipe = {
     {
       id: "filter",
       title: "Filtro",
-      instruction: "Lleva el filtro con el molido hasta la cafetera.",
+      instruction: "Vacía el molido en el gotero de la cafetera.",
       kind: "place",
       item: LEFT_REST,
-      target: RIGHT_REST,
+      target: STATION,
       radius: 1.02,
       goal: 0,
       holds: "filter",
@@ -138,7 +171,7 @@ const TINTO: Recipe = {
     {
       id: "pour",
       title: "Vierte",
-      instruction: "Sostén la tetera sobre el filtro y gira la muñeca para verter.",
+      instruction: "Inclina la tetera sobre el gotero y llena la franja.",
       kind: "tilt",
       item: [-2.3, -0.9],
       target: STATION,
@@ -172,24 +205,26 @@ const ESPRESSO: Recipe = {
   id: "espresso",
   name: "Espresso",
   blurb: "Corto e intenso. Pide pulso en el prensado.",
+  pitch:
+    "Corto. El prensado y la extracción quieren medida, no prisa. Tres golpes bien puestos valen más que apretar fuerte.",
   colour: "#2d1608",
   stages: [
     {
       id: "dose",
       title: "Dosifica",
-      instruction: "Pellizca la cuchara y llena el portafiltro.",
+      instruction: "Lleva la cuchara llena y suéltala sobre el molino.",
       kind: "place",
       item: LEFT_REST,
-      target: STATION,
-      radius: 1.0,
+      target: GRINDER,
+      radius: 1.02,
       goal: 0,
       holds: "scoop",
-      sits: "portafilter",
+      sits: "grinder",
     },
     {
       id: "grind",
       title: "Muele fino",
-      instruction: "Gira la manivela: el espresso pide molido más fino.",
+      instruction: "Gira la manivela alrededor del molino, más fino.",
       kind: "crank",
       item: [1.05, 0],
       target: [0, 0],
@@ -202,7 +237,7 @@ const ESPRESSO: Recipe = {
     {
       id: "tamp",
       title: "Prensa",
-      instruction: "Toma el prensador y baja la mano sobre el portafiltro.",
+      instruction: "Prensa sobre el portafiltro.",
       kind: "tamp",
       item: [-2.1, -0.9],
       target: STATION,
@@ -215,14 +250,15 @@ const ESPRESSO: Recipe = {
     {
       id: "extract",
       title: "Extrae",
-      instruction: "Sostén el portafiltro en la máquina hasta llenar la franja.",
+      instruction:
+        "Encaja el portafiltro bajo el grupo. El espresso cae solo a la taza — suelta en la franja.",
       kind: "hold",
       item: [-2.1, -0.2],
       target: STATION,
-      radius: 1.0,
+      radius: 1.05,
       goal: 0.68,
       band: [0.55, 0.8],
-      rate: 0.38,
+      rate: 0.32,
       liquid: "espresso",
       holds: "portafilter",
       sits: "machine",
@@ -251,12 +287,14 @@ const CAPUCHINO: Recipe = {
   id: "capuchino",
   name: "Capuchino",
   blurb: "Con leche espumada. El más movido de los tres.",
+  pitch:
+    "Leche espumada y el vertido de un barista: zigzag sobre la taza y un corazón al cerrar. Los dos gestos cuentan.",
   colour: "#6b4326",
   stages: [
     {
       id: "grind",
       title: "Muele",
-      instruction: "Gira la manivela para moler la base.",
+      instruction: "Gira la manivela alrededor del molino.",
       kind: "crank",
       item: [1.05, 0],
       target: [0, 0],
@@ -269,14 +307,15 @@ const CAPUCHINO: Recipe = {
     {
       id: "extract",
       title: "Extrae",
-      instruction: "Sostén el portafiltro en la máquina hasta llenar la franja.",
+      instruction:
+        "Encaja el portafiltro bajo el grupo. El espresso cae solo a la taza — suelta en la franja.",
       kind: "hold",
       item: [-2.1, -0.2],
       target: STATION,
-      radius: 1.0,
+      radius: 1.05,
       goal: 0.58,
       band: [0.45, 0.7],
-      rate: 0.42,
+      rate: 0.36,
       liquid: "espresso",
       holds: "portafilter",
       sits: "machine",
@@ -285,7 +324,7 @@ const CAPUCHINO: Recipe = {
     {
       id: "froth",
       title: "Espuma",
-      instruction: "Toma la jarra de leche y agítala de lado a lado.",
+      instruction: "Agita la jarra de leche de lado a lado.",
       kind: "shake",
       item: [-2.2, -0.9],
       target: [-2.2, -0.9],
@@ -294,21 +333,24 @@ const CAPUCHINO: Recipe = {
       band: [8, 14],
       holds: "jug",
       sits: "mat",
+      liquid: "milk",
     },
     {
       id: "milk",
       title: "Vierte la leche",
-      instruction: "Sostén la jarra sobre la taza y gira la muñeca.",
+      instruction:
+        "Inclina la jarra sobre la taza, zigzaguea como un barista y cierra con un corazón.",
       kind: "tilt",
       item: [-2.2, -0.9],
       target: STATION,
       radius: 1.0,
       goal: 0.6,
       band: [0.5, 0.75],
-      rate: 0.5,
+      rate: 0.46,
       holds: "jug",
       sits: "mug",
       liquid: "milk",
+      flourish: "heart",
     },
     {
       id: "serve",
@@ -339,9 +381,16 @@ export function bandScore(
   return Math.max(0, 1 - miss / fade);
 }
 
-/** Full marks dead centre, nothing at all by the time you reach the rim. */
+/**
+ * Landing on the object is the point. The inner well is full marks; the rim
+ * is still a good coffee. Only missing the destination scores nothing.
+ */
 export function placeScore(distance: number, radius: number): number {
-  return Math.max(0, 1 - distance / Math.max(radius, 1e-4));
+  const well = Math.max(radius, 1e-4) * 0.72;
+  if (distance <= well) return 1;
+  if (distance >= radius) return 0;
+  const t = (distance - well) / Math.max(radius - well, 1e-4);
+  return 0.8 + 0.2 * (1 - t);
 }
 
 export function grade(score: number): string {

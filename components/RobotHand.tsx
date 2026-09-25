@@ -1,480 +1,385 @@
 "use client";
 
-import { useMemo, useRef, type RefObject } from "react";
+import { useEffect, useMemo, useRef, type RefObject } from "react";
 import { useFrame } from "@react-three/fiber";
 import { RoundedBox } from "@react-three/drei";
-import type { InstancedMesh, Mesh, MeshToonMaterial } from "three";
+import type { Group, Mesh } from "three";
+import { Color, Matrix4, Quaternion, Vector3 } from "three";
+import { type Handedness, type TrackedHand } from "@/hooks/useHandTracking";
+import { keepFacing, makeFrame, palmFrame } from "@/hooks/palmFrame";
+import { handTuning } from "@/hooks/handPose";
+import { createHandToon, paintHandToon } from "@/components/handToon";
 import {
-  Color,
-  DataTexture,
-  Matrix4,
-  NearestFilter,
-  Quaternion,
-  RedFormat,
-  Vector3,
-} from "three";
+  GLOVE_POS_DEAD,
+  GLOVE_TURN_DEAD,
+  gloveChaseRate,
+  gloveCurl,
+  gloveFollow,
+  glovePhase,
+  gloveSideSign,
+} from "@/components/coffee/gloveVisual";
 import {
-  HAND_CONNECTIONS,
-  landmarkToWorld,
-  type Handedness,
-  type TrackedHand,
-} from "@/hooks/useHandTracking";
-import {
-  LOCKED_SPAN,
-  deepen,
-  lockSpan,
-  makeFrame,
-  palmFrame,
-} from "@/hooks/palmFrame";
+  composeFolds,
+  emptyGloveHold,
+  gripBlend,
+  gripForTool,
+  GRIPS,
+  mixGripScalar,
+  poseGloveFinger,
+  seekHandle,
+  type GloveHold,
+} from "@/components/coffee/gloveGrip";
+import { scoopDumpPose } from "@/components/coffee/beanDump";
+import { gloveFolds } from "@/hooks/handCurl";
+import { HAND_HOVER } from "@/hooks/handAim";
+
+export { handTuning, handView } from "@/hooks/handPose";
 
 /**
- * The hand, built where the tracking says it is.
- *
- * What was here before posed a rigged glTF hand: it read a bind pose out of
- * the skeleton, walked each finger as a chain, solved a rotation per bone and
- * held every joint inside limits. Every part of that was there to serve one
- * requirement — a skinned mesh has fixed bone lengths, and they have to be
- * respected — and that requirement is what made it fragile:
- *
- *   - Fixed lengths mean depth has to be invented, because a bone foreshortened
- *     on screen must have gone somewhere. Inventing it needs a sign, and the
- *     sign is unknowable exactly where it matters most.
- *   - A skeleton has a handedness of its own, so the right one of a mirrored
- *     pair has to be chosen from the landmarks, and chosen again whenever the
- *     hand turns. Choosing wrong rebuilds the rig mid-gesture.
- *   - Solving rotations down a chain compounds error: a wrong angle at a
- *     knuckle moves every bone past it, and a wrong angle at the wrist moves
- *     the whole hand.
- *
- * None of that exists here. There is no skeleton, so there is nothing to
- * retarget: each segment is drawn between the two landmarks it spans, and each
- * joint is drawn where its landmark is. A left hand comes out left because its
- * landmarks are a left hand's. A finger that cannot be read clearly is wrong on
- * its own rather than dragging the hand with it.
- *
- * The cost, stated plainly: fingers change apparent length as they turn toward
- * the camera, because nothing here forces them to keep one. That is the same
- * fact the old code spent four hundred lines fighting, and letting it be true
- * is what buys everything above.
- *
- * It cannot look like flesh, so it does not try: pale ceramic bones on brass
- * joints, an automaton's hand rather than a person's.
+ * Designed comic glove. Tracking decides where it sits and how closed
+ * each finger is; the silhouette itself is a puppet, not a reconstruction
+ * of twenty-one noisy landmarks. A real fist folds the mitt shut.
  */
 
-/**
- * Drawn colours rather than material ones, and pitched bright: cel shading
- * steps everything down toward the dark end, so a colour picked to look right
- * flat comes out muddy once it is on the ramp.
- */
-const BONE_COLOR = new Color("#fbf0d9");
-const BONE_RESTING = new Color("#c2b7a2");
-const JOINT_COLOR = new Color("#f2ab2c");
-const JOINT_RESTING = new Color("#8f6524");
+const GLOVE_COLOR = new Color("#fff6ee");
+const GLOVE_RESTING = new Color("#efe0cc");
 const GRAB_COLOR = new Color("#f0b429");
-
-/** A cuff per hand, far enough apart in tone to tell which is which. */
 const HAND_ACCENTS: Record<Handedness, string> = {
-  Left: "#d98c3c",
-  Right: "#7a3b1e",
+  Left: "#f2c48a",
+  Right: "#e8a878",
 };
 
-/**
- * The ramp every surface here is shaded against: four flat steps instead of a
- * smooth falloff.
- *
- * This is what makes it read as a drawing rather than as a render. Toon
- * shading also drops metalness and reflections, so the brass stops being
- * literal metal and becomes the colour gold is drawn with — which is the
- * trade, and for a cartoon it is the right way round.
- */
-function toonRamp() {
-  const steps = new Uint8Array([86, 150, 214, 255]);
-  const ramp = new DataTexture(steps, steps.length, 1, RedFormat);
-  ramp.minFilter = NearestFilter;
-  ramp.magFilter = NearestFilter;
-  ramp.generateMipmaps = false;
-  ramp.needsUpdate = true;
-  return ramp;
-}
+const IDLE_HOLD = emptyGloveHold();
 
-const AXIS_Y = new Vector3(0, 1, 0);
-const AXIS_Z = new Vector3(0, 0, 1);
-const JOINTS = 21;
-const BONES = HAND_CONNECTIONS.length;
-
-/**
- * How thick each joint is, as a share of the hand's locked span.
- *
- * Written out per landmark rather than derived, because a hand is not uniform:
- * knuckles are wider than the bones either side of them, which is what makes a
- * jointed hand read as jointed, and everything narrows toward the fingertips.
- */
-const JOINT_SIZE: readonly number[] = [
-  0.135, // 0  wrist
-  0.095, 0.086, 0.078, 0.07, // 1-4   thumb
-  0.1, 0.088, 0.079, 0.07, // 5-8   index
-  0.103, 0.09, 0.08, 0.071, // 9-12  middle
-  0.098, 0.086, 0.077, 0.068, // 13-16 ring
-  0.088, 0.079, 0.072, 0.064, // 17-20 pinky
-];
-
-/** The five bones that outline the palm rather than a finger. */
-const PALM_BONES = new Set([4, 8, 12, 16, 17]);
-
-const SPEED_FULL = 3.2;
-const REST_RATE = 2.6;
-const SHOWN_FLOOR = 0.02;
-const PAINT_RATE = 9;
-
-/**
- * The numbers that decide how the hand feels, read at runtime so they can be
- * dialled against a live camera instead of guessed at and rebuilt.
- *
- * Shorter than it was. Everything that existed to prop up the retargeting —
- * how much depth to believe when orienting the model, how far a finger could
- * be trusted to reach, how gently the whole hand was allowed to turn — went
- * with the retargeting.
- */
-export const handTuning = {
-  /** Smoothing in e-folds per second: heavy at rest, light once moving. */
-  stillRate: 16,
-  movingRate: 90,
-  /** Depth is the noisiest axis tracking reports, so it is damped harder. */
-  depthDamping: 0.75,
-  /**
-   * How far to stretch the reported depth, about the wrist.
-   *
-   * MediaPipe reports depth at roughly a fifth of the scale of the other two
-   * axes. `WORLD_Z` in the tracker undoes some of that, but it was set when
-   * depth was only ever used for the shape of a finger, and it is deliberately
-   * timid — which left the hand nearly flat. A flat hand is a hand whose
-   * fingers never pass behind one another, so nothing ever occludes anything
-   * and the whole thing reads as a sticker.
-   *
-   * Above 1 on purpose. At 1 the hand is as deep as `WORLD_Z` leaves it; the
-   * default here opens that out until a finger folded behind the palm is
-   * genuinely behind it and gets hidden by it.
-   */
-  depthScale: 2.2,
-  /** Arriving is quick, leaving gentler, so a dropped frame is not a flicker. */
-  showRate: 14,
-  hideRate: 5,
-};
-
-/** Presentation switches, settled by looking rather than by reasoning. */
-export const handView = {
-  /** Draw the palm plate. Off leaves the bare linkage. */
-  showPalm: true,
-};
-
-const REST_POSE: readonly (readonly [number, number, number])[] = [
-  [0, 0, 0],
-  [-0.42, 0.22, 0.1],
-  [-0.72, 0.5, 0.18],
-  [-0.9, 0.72, 0.24],
-  [-1.0, 0.92, 0.28],
-  [-0.38, 0.92, 0],
-  [-0.43, 1.4, 0.06],
-  [-0.45, 1.7, 0.16],
-  [-0.46, 1.92, 0.26],
-  [0, 1.0, 0],
-  [0.01, 1.51, 0.05],
-  [0.02, 1.84, 0.15],
-  [0.02, 2.08, 0.26],
-  [0.34, 0.95, 0],
-  [0.41, 1.42, 0.06],
-  [0.45, 1.72, 0.17],
-  [0.47, 1.94, 0.28],
-  [0.66, 0.84, 0],
-  [0.76, 1.19, 0.06],
-  [0.81, 1.42, 0.15],
-  [0.84, 1.6, 0.24],
-];
+const FINGERS = [
+  { name: "thumb", x: -0.2, y: 0.04, z: 0.03, spread: 0.82, length: 0.3, thick: 0.072, thumb: true },
+  { name: "index", x: -0.11, y: 0.2, z: 0, spread: 0.12, length: 0.38, thick: 0.06, thumb: false },
+  { name: "middle", x: 0, y: 0.22, z: 0, spread: 0, length: 0.42, thick: 0.064, thumb: false },
+  { name: "ring", x: 0.1, y: 0.2, z: 0, spread: -0.1, length: 0.38, thick: 0.058, thumb: false },
+  { name: "pinky", x: 0.18, y: 0.16, z: 0, spread: -0.22, length: 0.3, thick: 0.05, thumb: false },
+] as const;
 
 function createState(handedness: Handedness) {
   return {
-    /** Where tracking says the joints are, and where they are being drawn. */
-    target: Array.from({ length: JOINTS }, () => new Vector3()),
-    current: Array.from({ length: JOINTS }, () => new Vector3()),
-    prevWrist: new Vector3(),
-    seeded: false,
-    shown: 0,
-    presence: 0,
-    grab: 0,
+    pos: new Vector3(),
+    targetPos: new Vector3(),
+    quat: new Quaternion(),
+    targetQuat: new Quaternion(),
+    matrix: new Matrix4(),
     frame: makeFrame(),
+    lastNormal: new Vector3(),
+    lightDir: new Vector3(),
+    wrist: new Vector3(),
+    middle: new Vector3(),
+    index: new Vector3(),
+    pinky: new Vector3(),
+    aim: new Vector3(),
+    dumpAxis: new Vector3(1, 0, 0),
+    dumpQuat: new Quaternion(),
+    palmQuat: new Quaternion(),
     accent: new Color(HAND_ACCENTS[handedness]),
     cuffTint: new Color(HAND_ACCENTS[handedness]),
-    boneTint: new Color(),
-    jointTint: new Color(),
-    matrix: new Matrix4(),
-    quat: new Quaternion(),
-    dir: new Vector3(),
-    mid: new Vector3(),
-    size: new Vector3(),
-    v: new Vector3(),
+    gloveTint: new Color(),
+    shown: 0,
+    grab: 0,
+    folds: [0, 0, 0, 0, 0],
+    oppose: 0,
+    squeeze: 0,
+    seeded: false,
+    seedsReady: false,
   };
 }
 
 export function RobotHand({
   handedness,
   handsRef,
+  holdRef,
+  active,
 }: {
   handedness: Handedness;
   handsRef: RefObject<TrackedHand[]>;
+  holdRef?: RefObject<GloveHold>;
+  active: boolean;
 }) {
-  const bonesRef = useRef<InstancedMesh>(null);
-  const jointsRef = useRef<InstancedMesh>(null);
+  const rootRef = useRef<Group>(null);
+  const fingerRefs = useRef<(Group | null)[]>([]);
+  const midRefs = useRef<(Group | null)[]>([]);
+  const tipRefs = useRef<(Group | null)[]>([]);
   const palmRef = useRef<Mesh>(null);
   const cuffRef = useRef<Mesh>(null);
   const stateRef = useRef<ReturnType<typeof createState> | null>(null);
 
-  // Written once: the thickness of each bone comes from the thinner of the two
-  // joints it runs between, so a bone never looks fatter than the knuckle it
-  // leaves. Palm struts are squarer, because they are a chassis rather than a
-  // finger.
-  const ramp = useMemo(() => toonRamp(), []);
-  const boneSize = useMemo(
-    () =>
-      HAND_CONNECTIONS.map(([a, b], i) => {
-        const thinner = Math.min(JOINT_SIZE[a], JOINT_SIZE[b]);
-        return thinner * (PALM_BONES.has(i) ? 0.72 : 0.86);
-      }),
-    [],
+  const materials = useMemo(
+    () => ({
+      glove: createHandToon(GLOVE_COLOR, 0.36),
+      cuff: createHandToon(HAND_ACCENTS[handedness], 0.24),
+    }),
+    [handedness],
   );
+  useEffect(() => {
+    return () => {
+      materials.glove.dispose();
+      materials.cuff.dispose();
+    };
+  }, [materials]);
 
   useFrame((frameState, delta) => {
-    const bones = bonesRef.current;
-    const joints = jointsRef.current;
-    if (!bones || !joints) return;
-
+    const root = rootRef.current;
+    if (!root) return;
     const dt = Math.min(delta, 0.05);
-    const time = frameState.clock.elapsedTime;
     const hand = (handsRef.current ?? []).find(
       (entry) => entry.handedness === handedness,
     );
-    const tracked = hand?.smoothedLandmarks.length === JOINTS;
+    const phase = glovePhase(active, hand);
     const s = (stateRef.current ??= createState(handedness));
-    const { target, current } = s;
-    const paint = 1 - Math.exp(-PAINT_RATE * dt);
 
-    if (tracked && hand) {
-      for (let i = 0; i < JOINTS; i++) {
-        const world = landmarkToWorld(hand.smoothedLandmarks[i]);
-        target[i].set(world.x, world.y, world.z);
-      }
-      // Lock the visual size. Apparent hand size grows and shrinks with
-      // distance to the camera, and following it made the hand pulse.
-      lockSpan(target, s.v);
-      // Open the depth out, so fingers are far enough apart along the view
-      // axis to pass behind one another and be hidden when they do.
-      deepen(target, handTuning.depthScale);
-    } else if (hand) {
-      // Pointer fallback: a cursor and no hand shape, so the resting pose
-      // stands in and is hung off the cursor.
-      const breath = 1 + Math.sin(time * 1.25) * 0.018;
-      for (let i = 0; i < JOINTS; i++) {
-        const [x, y, z] = REST_POSE[i];
-        target[i].set(x, y, z).multiplyScalar(breath);
-      }
-      // Through the same rescaling as a tracked hand rather than a factor of
-      // its own, so the two are the same size by construction and cannot drift
-      // apart when one of them is edited.
-      lockSpan(target, s.v);
-      // Line the pinch up with what the grab logic actually tests.
-      s.v.copy(target[4]).add(target[8]).multiplyScalar(0.5);
-      s.v.sub(
-        s.mid.set(hand.cursor.x, hand.cursor.y, hand.cursor.z),
+    const hold = holdRef?.current ?? IDLE_HOLD;
+    const mine = hold.handedness === handedness && (hold.holding || hold.near);
+    const blend = mine ? gripBlend(hold.near, hold.holding) : 0;
+    const seek = mine ? seekHandle(hold.near, hold.holding) : 0;
+    const grip = GRIPS[gripForTool(hold.tool)];
+
+    if (hand) {
+      const cursorX = hand.cursor.x;
+      const cursorY = hand.cursor.y;
+      s.targetPos.set(
+        cursorX + (hold.gripX - cursorX) * seek,
+        cursorY + (hold.gripY - cursorY) * seek,
+        HAND_HOVER,
       );
-      for (const point of target) point.sub(s.v);
-    }
-
-    s.shown +=
-      ((hand ? 1 : 0) - s.shown) *
-      (1 - Math.exp(-(hand ? handTuning.showRate : handTuning.hideRate) * dt));
-    const onStage = s.shown > SHOWN_FLOOR;
-    if (!onStage) s.seeded = false;
-
-    // Smooth hard at rest and let go as the hand picks up speed: tracking
-    // jitters most when the hand is holding still, which is exactly when the
-    // eye notices.
-    const speed = s.seeded ? s.prevWrist.distanceTo(target[0]) / dt : 999;
-    s.prevWrist.copy(target[0]);
-    const eased = Math.min(1, speed / SPEED_FULL);
-    const rate = tracked
-      ? handTuning.stillRate +
-        (handTuning.movingRate - handTuning.stillRate) * eased
-      : hand
-        ? handTuning.movingRate
-        : REST_RATE;
-    const follow = 1 - Math.exp(-rate * dt);
-    const depthFollow = 1 - Math.exp(-rate * handTuning.depthDamping * dt);
-
-    for (let i = 0; i < JOINTS; i++) {
-      if (s.seeded) {
-        current[i].x += (target[i].x - current[i].x) * follow;
-        current[i].y += (target[i].y - current[i].y) * follow;
-        current[i].z += (target[i].z - current[i].z) * depthFollow;
-      } else {
-        current[i].copy(target[i]);
+      const posed = hand.posed;
+      if (posed && posed.length >= 18) {
+        const seed = s.seedsReady ? 1 - Math.exp(-16 * dt) : 1;
+        const pull = (into: Vector3, x: number, y: number, z: number) => {
+          s.aim.set(x, y, z);
+          if (!s.seedsReady) into.copy(s.aim);
+          else into.lerp(s.aim, seed);
+        };
+        pull(s.wrist, posed[0].x, posed[0].y, posed[0].z);
+        pull(s.middle, posed[9].x, posed[9].y, posed[9].z);
+        pull(s.index, posed[5].x, posed[5].y, posed[5].z);
+        pull(s.pinky, posed[17].x, posed[17].y, posed[17].z);
+        s.seedsReady = true;
+        // Depth is the noisiest axis. Believing it fully spins the whole mitt.
+        palmFrame(s.wrist, s.middle, s.index, s.pinky, 0.28, s.frame);
+        keepFacing(s.frame, s.lastNormal);
+        if (s.frame.upSpan > 0.12 && s.frame.acrossSpan > 0.08) {
+          s.matrix.makeBasis(s.frame.side, s.frame.up, s.frame.normal);
+          s.palmQuat.setFromRotationMatrix(s.matrix);
+        }
+      }
+      s.targetQuat.copy(s.palmQuat);
+      if (hold.dump > 0.001) {
+        const pour = scoopDumpPose(hold.dump);
+        s.dumpQuat.setFromAxisAngle(s.dumpAxis, pour.roll);
+        s.targetQuat.multiply(s.dumpQuat);
       }
     }
-    s.seeded = true;
 
-    bones.visible = onStage;
-    joints.visible = onStage;
-    if (palmRef.current) palmRef.current.visible = onStage && handView.showPalm;
-    if (cuffRef.current) cuffRef.current.visible = onStage;
-    if (!onStage) return;
-
-    s.presence += ((hand ? 1 : 0) - s.presence) * paint;
-    s.grab += ((hand?.isGrabbing ? 1 : 0) - s.grab) * paint;
-
-    // One segment per bone, placed between the two landmarks it spans. This is
-    // the whole of the posing: no rotation is solved, only read.
-    for (let i = 0; i < BONES; i++) {
-      const [a, b] = HAND_CONNECTIONS[i];
-      s.dir.copy(current[b]).sub(current[a]);
-      const length = s.dir.length();
-      s.mid.copy(current[a]).add(current[b]).multiplyScalar(0.5);
-      if (length < 1e-5) {
-        s.quat.identity();
-      } else {
-        s.quat.setFromUnitVectors(AXIS_Y, s.dir.divideScalar(length));
-      }
-      const thick = boneSize[i] * s.shown;
-      s.matrix.compose(s.mid, s.quat, s.size.set(thick, length, thick));
-      bones.setMatrixAt(i, s.matrix);
+    const want = phase === "follow" ? 1 : 0;
+    s.shown = gloveFollow(
+      s.shown,
+      want,
+      want ? handTuning.showRate : handTuning.hideRate,
+      dt,
+    );
+    s.grab = gloveFollow(s.grab, hand?.isGrabbing || hold.holding ? 1 : 0, 18, dt);
+    const wantFolds = composeFolds(
+      gloveFolds(
+        hand?.posed ?? hand?.smoothedLandmarks,
+        Boolean(hand?.isGrabbing || hold.holding),
+      ),
+      grip,
+      blend,
+    );
+    for (let i = 0; i < s.folds.length; i++) {
+      const target = wantFolds[i] ?? 0;
+      const closing = target > (s.folds[i] ?? 0);
+      s.folds[i] = gloveFollow(s.folds[i], target, closing ? 26 : 12, dt);
+    }
+    const wantOppose = mixGripScalar(s.folds[0] ?? 0, grip.oppose, blend);
+    const wantSqueeze = mixGripScalar((s.grab ?? 0) * 0.18, grip.squeeze, blend);
+    s.oppose = gloveFollow(s.oppose, wantOppose, 16, dt);
+    s.squeeze = gloveFollow(s.squeeze, wantSqueeze, 16, dt);
+    const fade = Math.min(1, Math.max(0, s.shown));
+    const onStage = fade > 0.05;
+    root.visible = onStage;
+    if (!onStage) {
+      s.seeded = false;
+      s.seedsReady = false;
+      return;
     }
 
-    for (let i = 0; i < JOINTS; i++) {
-      const size = JOINT_SIZE[i] * s.shown;
-      s.matrix.compose(current[i], s.quat.identity(), s.size.setScalar(size));
-      joints.setMatrixAt(i, s.matrix);
+    if (!s.seeded) {
+      s.pos.copy(s.targetPos);
+      s.quat.copy(s.targetQuat);
+      s.seeded = true;
+    } else {
+      const live = hand?.tracking === "live";
+      const travel = s.pos.distanceTo(s.targetPos);
+      const turn = 1 - Math.abs(s.quat.dot(s.targetQuat));
+      const locked = blend > 0.7;
+      const posRate = live
+        ? gloveChaseRate(
+            Math.max(0, travel - (locked ? 0 : GLOVE_POS_DEAD)),
+            locked ? 36 : 14,
+            locked ? 96 : 70,
+            0.18,
+          )
+        : 10;
+      const rotRate = live
+        ? gloveChaseRate(
+            Math.max(0, turn - GLOVE_TURN_DEAD),
+            6,
+            22,
+            0.08,
+          )
+        : 8;
+      s.pos.lerp(s.targetPos, 1 - Math.exp(-posRate * dt));
+      s.quat.slerp(s.targetQuat, 1 - Math.exp(-rotRate * dt));
     }
 
-    bones.instanceMatrix.needsUpdate = true;
-    joints.instanceMatrix.needsUpdate = true;
+    const squash = 1 - 0.06 * s.grab;
+    const side = gloveSideSign(handedness);
+    root.quaternion.copy(s.quat);
+    // Sit the palm behind the handle so the fingers wrap it, not the wrist.
+    const hug = blend * 0.11;
+    s.aim.set(0, 0.05 * hug, 0.09 * hug).applyQuaternion(s.quat);
+    root.position.copy(s.pos).sub(s.aim);
+    root.scale.set(side * 1.22 * squash, 1.22 * squash, 1.22 * squash);
 
-    // The palm plate and the cuff both want a frame. Note what this frame can
-    // and cannot cost now: it orients two decorative pieces, so if depth noise
-    // shakes it, two decorative pieces shake. It used to orient the entire
-    // hand.
-    palmFrame(current[0], current[9], current[5], current[17], 1, s.frame);
-
-    const palm = palmRef.current;
-    if (palm) {
-      // Sized from the hand in front of it rather than from constants: a hand
-      // turning edge-on narrows its own knuckle span, so the plate narrows
-      // with it instead of hanging at full width in a meaningless plane.
-      const width = Math.max(s.frame.acrossSpan, 1e-3) * 1.06;
-      const height = Math.max(s.frame.upSpan, 1e-3) * 0.66;
-      // Between the wrist and the knuckles, biased toward the knuckles, which
-      // is where the breadth of a hand actually is.
-      s.mid
-        .copy(current[0])
-        .addScaledVector(s.frame.up, height * 0.82)
-        .addScaledVector(s.frame.side, 0);
-      palm.position.copy(s.mid);
-      palm.quaternion.setFromRotationMatrix(
-        s.matrix.makeBasis(s.frame.side, s.frame.up, s.frame.normal),
+    for (let i = 0; i < FINGERS.length; i++) {
+      const finger = fingerRefs.current[i];
+      if (!finger) continue;
+      const spec = FINGERS[i];
+      const mid = midRefs.current[i];
+      const tip = tipRefs.current[i];
+      const pose = poseGloveFinger(
+        spec,
+        gloveCurl(s.folds[i] ?? 0),
+        s.oppose,
+        s.squeeze,
       );
-      palm.scale.set(
-        width * s.shown,
-        height * s.shown,
-        LOCKED_SPAN * 0.05 * s.shown,
-      );
+      finger.position.set(pose.position[0], pose.position[1], pose.position[2]);
+      finger.rotation.set(pose.rotation[0], pose.rotation[1], pose.rotation[2]);
+      if (mid) mid.rotation.set(pose.mid[0], pose.mid[1], pose.mid[2]);
+      if (tip) tip.rotation.set(pose.tip[0], pose.tip[1], pose.tip[2]);
     }
 
-    const cuff = cuffRef.current;
-    if (cuff) {
-      cuff.quaternion.setFromUnitVectors(AXIS_Z, s.frame.up);
-      cuff.position
-        .copy(current[0])
-        .addScaledVector(s.frame.up, -0.07 * LOCKED_SPAN);
-      cuff.scale.setScalar(0.3 * LOCKED_SPAN * s.shown);
-    }
-
-    // Colour says two things at once: whether the hand is being seen, and
-    // whether it is holding something.
-    s.boneTint.copy(BONE_RESTING).lerp(BONE_COLOR, s.presence);
-    s.jointTint.copy(JOINT_RESTING).lerp(JOINT_COLOR, s.presence);
-    s.jointTint.lerp(GRAB_COLOR, s.grab * 0.7);
+    s.lightDir.copy(frameState.camera.position).sub(s.pos);
+    if (s.lightDir.lengthSq() < 1e-8) s.lightDir.set(0.25, -0.35, 0.9);
+    else s.lightDir.normalize();
+    s.gloveTint.copy(GLOVE_RESTING).lerp(GLOVE_COLOR, fade);
+    s.gloveTint.lerp(GRAB_COLOR, s.grab * 0.45);
     s.cuffTint.copy(s.accent).lerp(GRAB_COLOR, s.grab);
-
-    const boneMaterial = bones.material as MeshToonMaterial;
-    boneMaterial.color.copy(s.boneTint);
-    boneMaterial.emissive.copy(GRAB_COLOR);
-    boneMaterial.emissiveIntensity = 0.16 * s.grab;
-
-    const jointMaterial = joints.material as MeshToonMaterial;
-    jointMaterial.color.copy(s.jointTint);
-    jointMaterial.emissive.copy(GRAB_COLOR);
-    jointMaterial.emissiveIntensity = 0.3 * s.grab;
-
-    if (palm) (palm.material as MeshToonMaterial).color.copy(s.boneTint);
-    if (cuff) (cuff.material as MeshToonMaterial).color.copy(s.cuffTint);
+    paintHandToon(materials.glove, s.gloveTint, GRAB_COLOR, 0.16 * s.grab, s.lightDir, fade);
+    paintHandToon(materials.cuff, s.cuffTint, GRAB_COLOR, 0.1 * s.grab, s.lightDir, fade);
   });
 
   return (
-    <group>
-      <instancedMesh
-        ref={bonesRef}
-        args={[undefined, undefined, BONES]}
-        visible={false}
-        frustumCulled={false}
-        castShadow
-      >
-        {/* Barely tapered: a cartoon hand has sausages for fingers, not
-            spindles. A capsule would be the obvious shape and is the wrong
-            one — scaling it to a bone's length stretches its caps into eggs.
-            A plain cylinder is scaled cleanly, and the joint spheres sit
-            proud of it at both ends, which rounds it off for free. The taper
-            still has a direction: connections run parent to child, so the
-            narrow end is always the one nearer the fingertip. */}
-        <cylinderGeometry args={[0.9, 1, 1, 12]} />
-        <meshToonMaterial color={BONE_COLOR} gradientMap={ramp} />
-      </instancedMesh>
-
-      <instancedMesh
-        ref={jointsRef}
-        args={[undefined, undefined, JOINTS]}
-        visible={false}
-        frustumCulled={false}
-        castShadow
-      >
-        <sphereGeometry args={[1, 14, 10]} />
-        <meshToonMaterial color={JOINT_COLOR} gradientMap={ramp} />
-      </instancedMesh>
-
-      {/* A machined plate the linkage is mounted on, rather than a brick. */}
+    <group ref={rootRef} visible={false}>
       <RoundedBox
         ref={palmRef}
-        args={[1, 1, 1]}
-        radius={0.17}
+        args={[0.42, 0.38, 0.14]}
+        radius={0.12}
         smoothness={3}
-        visible={false}
+        position={[0, 0.02, 0]}
+        material={materials.glove}
         castShadow
-      >
-        <meshToonMaterial color={BONE_COLOR} gradientMap={ramp} />
-      </RoundedBox>
-
-      <mesh ref={cuffRef} visible={false} castShadow>
-        <torusGeometry args={[1, 0.34, 10, 22]} />
-        <meshToonMaterial color={HAND_ACCENTS[handedness]} gradientMap={ramp} />
-      </mesh>
+      />
+      {FINGERS.map((finger, index) => (
+        <group
+          key={finger.name}
+          ref={(node) => {
+            fingerRefs.current[index] = node;
+          }}
+          position={[finger.x, finger.y, finger.z]}
+          rotation={finger.thumb ? [0.22, 0, finger.spread] : [0.06, 0, finger.spread]}
+        >
+          <mesh
+            position={[0, finger.length * 0.22, 0]}
+            material={materials.glove}
+            castShadow
+          >
+            <capsuleGeometry args={[finger.thick, finger.length * 0.28, 6, 10]} />
+          </mesh>
+          <group
+            ref={(node) => {
+              midRefs.current[index] = node;
+            }}
+            position={[0, finger.length * 0.42, 0]}
+          >
+            <mesh
+              position={[0, finger.length * 0.14, 0]}
+              material={materials.glove}
+              castShadow
+            >
+              <capsuleGeometry
+                args={[finger.thick * 0.94, finger.length * 0.16, 6, 10]}
+              />
+            </mesh>
+            <group
+              ref={(node) => {
+                tipRefs.current[index] = node;
+              }}
+              position={[0, finger.length * 0.28, 0]}
+            >
+              <mesh
+                position={[0, finger.length * 0.12, 0]}
+                material={materials.glove}
+                castShadow
+              >
+                <capsuleGeometry
+                  args={[finger.thick * 0.88, finger.length * 0.12, 6, 10]}
+                />
+              </mesh>
+              <mesh
+                position={[0, finger.length * 0.24, 0]}
+                material={materials.glove}
+                castShadow
+              >
+                <sphereGeometry args={[finger.thick * 0.92, 10, 8]} />
+              </mesh>
+            </group>
+          </group>
+        </group>
+      ))}
+      <RoundedBox
+        ref={cuffRef}
+        args={[0.36, 0.16, 0.14]}
+        radius={0.07}
+        smoothness={3}
+        position={[0, -0.2, 0]}
+        material={materials.cuff}
+        castShadow
+      />
     </group>
   );
 }
 
 export function HandGloves({
   handsRef,
+  holdRef,
+  active = true,
 }: {
   handsRef: RefObject<TrackedHand[]>;
+  holdRef?: RefObject<GloveHold>;
+  active?: boolean;
 }) {
   return (
     <>
-      <RobotHand handedness="Left" handsRef={handsRef} />
-      <RobotHand handedness="Right" handsRef={handsRef} />
+      <RobotHand
+        handedness="Left"
+        handsRef={handsRef}
+        holdRef={holdRef}
+        active={active}
+      />
+      <RobotHand
+        handedness="Right"
+        handsRef={handsRef}
+        holdRef={holdRef}
+        active={active}
+      />
     </>
   );
 }

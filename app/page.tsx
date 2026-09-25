@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { CoffeeBranch, Hummingbird, ScatteredBeans } from "@/components/Botanical";
-import Image from "next/image";
 import { Field, Motes } from "@/components/Field";
-import { RECIPES } from "@/components/coffee/recipes";
+import { RECIPES, recipePortrait } from "@/components/coffee/recipes";
 
 export const metadata: Metadata = {
   title: "Café a mano — prepara café con las manos",
@@ -26,23 +26,10 @@ export const metadata: Metadata = {
  * renders no 3D at all: it has to be readable instantly, before a megabyte of
  * models is fetched.
  *
- * The look is La Mejor Taza's: the deep wine to open on, white type doing the
- * shouting, one amber thing to press, and the coffee plant growing in from the
- * edges.
- *
- * The brand also uses a green, and the way this page gets from one to the
- * other is the whole layout decision. Each section owns its colour outright —
- * that is what gives the page a rhythm — but they do not meet along a ruled
- * line, which is what made the change look like a mistake. Every field grows a
- * curved lip up into the one above it, so the ground changes along a shape
- * instead of an edge; see `Field`. They are ordered wine, roast, green, so the
- * one hue jump that has no good middle happens down in the dark where there is
- * no colour left to argue about.
- *
- * None of the fields is a flat fill either: each carries grain, a slow
- * breathing pool of light, and drifting husk. The cream is kept for the cards
- * alone, so it arrives as objects on the field rather than as a hole punched
- * through it.
+ * The first view is a single screen: the promise on the left, the person
+ * holding the cup on the right, and the three real drinks sitting as objects
+ * rather than as thumbnails. The later fields keep the brand rhythm — wine,
+ * roast, green — joined by curved lips instead of ruled lines; see `Field`.
  *
  * Every decorative drawing is clipped to its section and pinned to the outer
  * margin, and it is dropped entirely below the width where that margin exists.
@@ -51,10 +38,26 @@ export const metadata: Metadata = {
  */
 
 const GESTURES = [
-  { name: "Pellizca", says: "Junta pulgar e índice para tomar un objeto." },
-  { name: "Abre", says: "Separa los dedos y lo sueltas donde esté." },
-  { name: "Mueve", says: "La mano lleva el objeto; la altura la pone el juego." },
-  { name: "Gira", says: "Rota la muñeca para inclinar y verter." },
+  {
+    name: "Pellizca",
+    says: "Junta pulgar e índice para tomar un objeto.",
+    mark: "pinch",
+  },
+  {
+    name: "Abre",
+    says: "Separa los dedos y lo sueltas donde esté.",
+    mark: "open",
+  },
+  {
+    name: "Mueve",
+    says: "La mano lleva el objeto; la altura la pone el juego.",
+    mark: "move",
+  },
+  {
+    name: "Gira",
+    says: "Rota la muñeca para inclinar y verter.",
+    mark: "turn",
+  },
 ] as const;
 
 /**
@@ -65,36 +68,140 @@ const GESTURES = [
  * still a picture pinned to the card. Cut the cup out and it stops being a
  * picture of a thing and becomes the thing, sitting on the page.
  *
- * The cutouts were lifted from the originals with Vision's foreground mask,
- * the same one behind "copy subject" in Photos, then trimmed to their own
- * bounds so that one CSS height means the same size for all three. PNG for
- * the alpha; next/image serves WebP to anything that takes it.
- *
  * `lift` nudges the apparent size of each one. The box they are fitted into is
  * the same, but a wide saucer and a tall mug do not look the same size when
- * they merely occupy the same box — matching geometry is not matching how big
- * something looks, and only the eye can settle the difference.
+ * they merely occupy the same box — matching geometry is not matching how
+ * large something feels, and only the eye can do that.
  */
-const PHOTO: Record<
-  string,
-  { src: string; alt: string; lift: number }
-> = {
-  tinto: {
-    src: "/cafes/tinto.png",
-    alt: "Taza de café negro vista desde arriba, sin leche.",
-    lift: 1,
-  },
-  espresso: {
-    src: "/cafes/espresso.png",
-    alt: "Espresso corto en taza blanca sobre su plato, con la crema encima.",
-    lift: 1.1,
-  },
-  capuchino: {
-    src: "/cafes/capuchino.png",
-    alt: "Capuchino con un rosetón de espuma dibujado sobre el café.",
-    lift: 1.04,
-  },
+const PHOTO: Record<string, { lift: number; alt: string }> = {
+  tinto: { lift: 1, alt: "Taza de tinto vista desde arriba." },
+  espresso: { lift: 1.1, alt: "Taza de espresso sobre su plato." },
+  capuchino: { lift: 1.04, alt: "Capuchino con un rosetón de leche." },
 };
+
+const PROMISES = [
+  "Tres recetas",
+  "Cinco etapas cada una",
+  "La cámara no sale de tu equipo",
+] as const;
+
+function GestureMark({ kind }: { kind: (typeof GESTURES)[number]["mark"] }) {
+  if (kind === "pinch") {
+    return (
+      <svg viewBox="0 0 32 32" className="h-8 w-8" aria-hidden>
+        <circle cx="11" cy="20" r="3.2" fill="currentColor" />
+        <circle cx="21" cy="12" r="3.2" fill="currentColor" />
+        <path
+          d="M13.4 17.6 18.6 14"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+  if (kind === "open") {
+    return (
+      <svg viewBox="0 0 32 32" className="h-8 w-8" aria-hidden>
+        <circle cx="10" cy="16" r="2.6" fill="currentColor" />
+        <circle cx="22" cy="16" r="2.6" fill="currentColor" />
+        <path
+          d="M14 16h4"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+  if (kind === "move") {
+    return (
+      <svg viewBox="0 0 32 32" className="h-8 w-8" aria-hidden>
+        <path
+          d="M7 16h14.5M17 10.5 22.5 16 17 21.5"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 32 32" className="h-8 w-8" aria-hidden>
+      <path
+        d="M9 18.5a7 7 0 1 1 2.2 5.2"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        fill="none"
+      />
+      <path
+        d="M8 21.8 9.1 16.8 13.8 19"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    </svg>
+  );
+}
+
+function BrandMark() {
+  return (
+    <span
+      className="squircle flex h-9 w-9 items-center justify-center rounded-tile bg-white text-[color:var(--color-wine)] transition-transform duration-200 ease-sheet hover:rotate-6"
+      aria-hidden
+    >
+      <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5">
+        <path
+          d="M4 9h12v5.5A4.5 4.5 0 0 1 11.5 19h-3A4.5 4.5 0 0 1 4 14.5V9Z"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M16 10.5h1.5a2.5 2.5 0 0 1 0 5H16"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+      </svg>
+    </span>
+  );
+}
+
+function CupStill({
+  id,
+  className = "",
+  sizes,
+  priority = false,
+}: {
+  id: string;
+  className?: string;
+  sizes: string;
+  priority?: boolean;
+}) {
+  const photo = PHOTO[id];
+  return (
+    <span
+      className={`relative block h-full w-full ${className}`}
+      style={{ transform: `scale(${photo?.lift ?? 1})` }}
+    >
+      <Image
+        src={recipePortrait(id)}
+        alt={photo?.alt ?? ""}
+        width={560}
+        height={560}
+        sizes={sizes}
+        priority={priority}
+        className="portada-cup h-full w-full object-contain"
+      />
+    </span>
+  );
+}
 
 export default function Portada() {
   return (
@@ -110,7 +217,7 @@ export default function Portada() {
         {/* Hinged near the stem, so they lean the way a branch does rather
             than sliding about like a sticker. */}
         <CoffeeBranch
-          className="pointer-events-none absolute -left-20 top-24 hidden h-[26rem] w-auto origin-top-left lg:block xl:-left-6 xl:h-[30rem]"
+          className="pointer-events-none absolute -left-32 top-20 hidden h-[22rem] w-auto origin-top-left lg:block xl:-left-24 xl:h-[24rem]"
           style={{ animation: "sway 13s ease-in-out infinite" }}
         />
         <CoffeeBranch
@@ -121,31 +228,19 @@ export default function Portada() {
         <ScatteredBeans className="pointer-events-none absolute -left-20 bottom-0 hidden h-80 w-auto opacity-75 lg:block" />
         <ScatteredBeans className="pointer-events-none absolute right-2 top-8 hidden h-60 w-auto opacity-50 xl:block" />
 
-        <div className="relative mx-auto w-full max-w-3xl px-6 sm:px-8">
+        <div className="relative mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-6 sm:px-8 lg:px-14">
           <header className="flex items-center justify-between gap-4 py-6">
             <span className="t-headline flex items-center gap-2.5 font-bold">
-              <span
-                className="squircle flex h-8 w-8 items-center justify-center rounded-tile bg-white text-[color:var(--color-wine)] transition-transform duration-200 ease-sheet hover:rotate-6"
-                aria-hidden
-              >
-                <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5">
-                  <path
-                    d="M4 9h12v5.5A4.5 4.5 0 0 1 11.5 19h-3A4.5 4.5 0 0 1 4 14.5V9Z"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinejoin="round"
-                  />
-                  <path
-                    d="M16 10.5h1.5a2.5 2.5 0 0 1 0 5H16"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </span>
+              <BrandMark />
               Café a mano
             </span>
             <nav className="flex items-center gap-1">
+              <Link
+                href="/jugar"
+                className="t-footnote squircle rounded-full px-3 py-2 font-semibold text-label transition-colors duration-200 hover:bg-white/15"
+              >
+                Jugar
+              </Link>
               <Link
                 href="/manos"
                 className="t-footnote squircle rounded-full px-3 py-2 text-label-2 transition-colors duration-200 hover:bg-white/15 hover:text-label"
@@ -167,148 +262,180 @@ export default function Portada() {
             className="h-px w-full bg-[color:var(--color-tint)] opacity-80"
           />
 
-          <div className="py-20 sm:py-24">
-            <span className="pill t-caption px-4 py-1.5 uppercase tracking-[0.14em]">
-              Minijuego de barista
-            </span>
-            <h1 className="mt-6 text-[clamp(2.5rem,6.5vw,4.25rem)] font-black leading-[0.98] tracking-[-0.02em]">
-              Prepara café moviendo
-              <br className="hidden sm:block" /> las manos delante de la cámara.
-            </h1>
-            <p className="t-body mt-6 max-w-xl text-label-2">
-              Sin mando y sin teclado. La cámara mira tus manos, tú pellizcas
-              para tomar los cacharros y cada etapa se puntúa por lo bien que la
-              hagas. No se repite nada: si sale mal, sigues con peor nota.
-            </p>
-
-            <div className="mt-10 flex flex-wrap items-center gap-4">
-              <Link
-                href="/jugar"
-                className="squircle group inline-flex min-h-[3.25rem] items-center justify-center gap-2 rounded-full bg-[color:var(--color-tint)] px-8 text-[1.0625rem] font-bold text-[color:var(--color-tint-ink)] transition duration-200 ease-sheet hover:-translate-y-0.5 hover:brightness-110 hover:shadow-[0_16px_36px_-14px_rgba(245,153,10,0.75)] active:translate-y-0 active:scale-[0.97]"
-              >
-                Empezar a preparar
-                <span
-                  aria-hidden
-                  className="transition-transform duration-200 ease-sheet group-hover:translate-x-1"
-                >
-                  →
-                </span>
-              </Link>
-              <span className="t-footnote text-label-3">
-                Se puede jugar con ratón si no quieres dar la cámara.
+          <div className="grid flex-1 items-end gap-8 py-10 pb-20 sm:py-14 sm:pb-24 lg:grid-cols-[minmax(0,32rem)_minmax(0,1fr)] lg:items-center lg:gap-6 lg:pb-24 xl:gap-10">
+            <div className="max-w-xl">
+              <span className="pill t-caption px-4 py-1.5 uppercase tracking-[0.14em]">
+                Minijuego de barista
               </span>
+              <h1 className="mt-6 text-[clamp(2.6rem,6.4vw,4.6rem)] font-black leading-[0.96] tracking-[-0.03em]">
+                Prepara café
+                <br />
+                con las manos.
+              </h1>
+              <p className="t-body mt-6 max-w-lg text-label-2">
+                Sin mando y sin teclado. La cámara mira tus manos, tú pellizcas
+                para tomar los cacharros y cada etapa se puntúa por lo bien que
+                la hagas. No se repite nada: si sale mal, sigues con peor nota.
+              </p>
+
+              <div className="mt-9 flex flex-wrap items-center gap-4">
+                <Link
+                  href="/jugar"
+                  className="squircle group inline-flex min-h-[3.25rem] items-center justify-center gap-2 rounded-full bg-[color:var(--color-tint)] px-8 text-[1.0625rem] font-bold text-[color:var(--color-tint-ink)] transition duration-200 ease-sheet hover:-translate-y-0.5 hover:brightness-110 hover:shadow-[0_16px_36px_-14px_rgba(245,153,10,0.75)] active:translate-y-0 active:scale-[0.97]"
+                >
+                  Empezar a preparar
+                  <span
+                    aria-hidden
+                    className="transition-transform duration-200 ease-sheet group-hover:translate-x-1"
+                  >
+                    →
+                  </span>
+                </Link>
+                <a
+                  href="#carta"
+                  className="t-footnote squircle inline-flex min-h-[2.75rem] items-center rounded-full px-4 text-label-2 transition-colors duration-200 hover:bg-white/10 hover:text-label"
+                >
+                  Ver la carta
+                </a>
+              </div>
+
+              <p className="t-footnote mt-4 text-label-3">
+                Se puede jugar con ratón si no quieres dar la cámara.
+              </p>
+
+              <ul className="mt-8 flex flex-wrap gap-2">
+                {PROMISES.map((item) => (
+                  <li
+                    key={item}
+                    className="t-caption rounded-full border border-white/15 bg-white/[0.07] px-3 py-1.5 font-semibold text-label-2"
+                  >
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="relative mx-auto w-full max-w-md sm:max-w-lg lg:max-w-none lg:w-[min(50vw,42rem)] lg:justify-self-end">
+              <Image
+                src="/art/personaje-taza.png"
+                alt="Alguien sostiene una taza grande de café con las dos manos."
+                width={992}
+                height={741}
+                priority
+                sizes="(min-width: 1024px) 50vw, 90vw"
+                className="portada-figure h-auto w-full object-contain"
+              />
             </div>
           </div>
         </div>
-
       </Field>
 
       {/* -------------------------------------------- recipes, on the roast */}
-      {/* The darkest ground on the page, and the reason the cream cards read
-          as objects sitting on it rather than as panels cut out of it. */}
       <Field
         tone="roast"
         curve="pour"
-        glow="radial-gradient(70% 55% at 50% 12%, rgba(143,24,36,0.5), transparent 70%)"
-        className="py-16"
+        glow="radial-gradient(70% 55% at 50% 8%, rgba(143,24,36,0.4), transparent 68%)"
+        className="py-20 sm:py-24"
       >
         <Motes tint="#c98a5a" />
         <ScatteredBeans className="pointer-events-none absolute -right-16 top-20 hidden h-72 w-auto opacity-35 xl:block" />
 
-        <div className="relative mx-auto w-full max-w-3xl px-6 sm:px-8">
-          <h2 className="text-[clamp(1.625rem,4vw,2.25rem)] font-black tracking-[-0.02em]">
-            Tres cafés, cinco etapas cada uno
-          </h2>
-          <p className="t-body mt-3 max-w-xl text-label-2">
-            Cada receta se prepara distinto y se puntúa etapa por etapa.
-          </p>
+        <div
+          id="carta"
+          className="relative mx-auto w-full max-w-5xl scroll-mt-10 px-6 sm:px-8"
+        >
+          <div className="max-w-xl">
+            <span className="t-caption font-bold uppercase tracking-[0.18em] text-[color:var(--color-tint)]">
+              La carta
+            </span>
+            <h2 className="mt-3 text-[clamp(1.875rem,4.5vw,2.75rem)] font-black leading-[1.02] tracking-[-0.02em]">
+              Tres cafés.
+              <br className="hidden sm:block" />
+              Cinco etapas cada uno.
+            </h2>
+            <p className="t-body mt-4 text-label-2">
+              Del cafeto a la taza. Cada receta se prepara distinto y se puntúa
+              etapa por etapa — lo que hagas bien o mal se queda en el café.
+            </p>
+          </div>
 
-          <div className="mt-10 flex flex-col gap-6">
+          <div className="mt-14 flex flex-col gap-16 sm:gap-20">
             {RECIPES.map((recipe, row) => {
-              const photo = PHOTO[recipe.id];
+              const reverse = row % 2 === 1;
               return (
                 <article
                   key={recipe.id}
-                  className="group squircle overflow-hidden rounded-card bg-[color:var(--color-cream)] text-[color:var(--color-cocoa)] shadow-[0_18px_44px_-28px_rgba(0,0,0,0.95)] transition duration-300 ease-sheet hover:-translate-y-1 hover:shadow-[0_30px_58px_-26px_rgba(0,0,0,0.9)]"
+                  className={`flex flex-col items-center gap-8 sm:gap-12 ${
+                    reverse ? "sm:flex-row-reverse" : "sm:flex-row"
+                  }`}
                 >
-                  {/* The glass takes one side and the recipe the other, and
-                      the sides swap row to row so three of these in a column
-                      read as a list rather than as one card printed three
-                      times. */}
                   <div
-                    className={`flex flex-col sm:flex-row ${
-                      row % 2 === 1 ? "sm:flex-row-reverse" : ""
-                    }`}
+                    className="relative aspect-square w-full max-w-[20rem] shrink-0 overflow-hidden rounded-[1.75rem] sm:w-[min(42%,20rem)]"
+                    style={{ background: recipe.colour }}
                   >
                     {/* The cup floats on the panel rather than filling it.
                         What sells that is the light behind it and the shadow
                         under it: with neither, a cutout reads as a sticker. */}
                     <div
-                      className="relative flex h-56 w-full shrink-0 items-center justify-center overflow-hidden sm:h-auto sm:min-h-[16rem] sm:w-64"
-                      style={{ background: recipe.colour }}
-                    >
-                      <span
-                        aria-hidden
-                        className="absolute inset-0"
-                        style={{
-                          background:
-                            "radial-gradient(52% 46% at 50% 42%, rgba(255,240,215,0.34), transparent 72%)",
-                        }}
+                      aria-hidden
+                      className="pointer-events-none absolute inset-0"
+                      style={{
+                        background:
+                          "radial-gradient(48% 42% at 50% 58%, rgba(255,220,160,0.28), transparent 70%)",
+                        animation: "field-breathe 14s ease-in-out infinite",
+                      }}
+                    />
+                    <div className="absolute inset-[12%] flex items-center justify-center">
+                      <CupStill
+                        id={recipe.id}
+                        sizes="(max-width: 640px) 70vw, 20rem"
                       />
-                      {photo && (
-                        // Padded box first, then the image contained inside
-                        // it, so no cup can ever reach an edge. The scale on
-                        // top is optical only.
-                        <span className="absolute inset-0 p-6">
-                          <span
-                            className="relative block h-full w-full transition-transform duration-500 ease-sheet group-hover:-translate-y-2"
-                            style={{ transform: `scale(${photo.lift})` }}
-                          >
-                            <Image
-                              src={photo.src}
-                              alt={photo.alt}
-                              fill
-                              sizes="(max-width: 639px) 70vw, 260px"
-                              className="object-contain drop-shadow-[0_16px_20px_rgba(20,4,2,0.5)]"
-                            />
-                          </span>
-                        </span>
-                      )}
                     </div>
+                  </div>
 
-                    <div className="flex flex-1 flex-col p-6">
-                      <h3 className="text-[1.5rem] font-black tracking-[-0.02em]">
+                  <div className="w-full max-w-xl">
+                    <div className="flex items-baseline gap-3">
+                      <span
+                        className="font-mono text-[0.75rem] font-bold tabular-nums tracking-[0.18em] text-[color:var(--color-tint)]"
+                        aria-hidden
+                      >
+                        {String(row + 1).padStart(2, "0")}
+                      </span>
+                      <h3 className="text-[clamp(1.75rem,3.2vw,2.4rem)] font-black tracking-[-0.03em]">
                         {recipe.name}
                       </h3>
-                      <p className="t-subhead mt-1 opacity-70">{recipe.blurb}</p>
-
-                      <ol className="mt-4 space-y-2.5">
-                        {recipe.stages.map((stage, i) => (
-                          <li key={stage.id} className="flex gap-3">
-                            <span
-                              className="squircle mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[color:var(--color-cocoa)]/10 font-mono text-[0.6875rem] font-bold tabular-nums transition-colors duration-300 group-hover:bg-[color:var(--color-tint)]/40"
-                              aria-hidden
-                            >
-                              {i + 1}
-                            </span>
-                            <p className="t-caption leading-snug">
-                              <span className="font-bold">{stage.title}.</span>{" "}
-                              <span className="opacity-70">
-                                {stage.instruction}
-                              </span>
-                            </p>
-                          </li>
-                        ))}
-                      </ol>
-
+                    </div>
+                    <p className="t-subhead mt-2 text-[color:var(--color-tint)]">
+                      {recipe.blurb}
+                    </p>
+                    <p className="t-body mt-4 text-label-2">{recipe.pitch}</p>
+                    <ol className="mt-6 flex flex-wrap gap-2">
+                      {recipe.stages.map((stage, i) => (
+                        <li
+                          key={stage.id}
+                          className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5"
+                        >
+                          <span
+                            className="font-mono text-[0.65rem] font-bold tabular-nums text-[color:var(--color-tint)]"
+                            aria-hidden
+                          >
+                            {i + 1}
+                          </span>
+                          <span className="t-caption font-semibold tracking-tight">
+                            {stage.title}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                    <div className="mt-8">
                       <Link
                         href="/jugar"
-                        className="t-footnote mt-5 inline-flex w-fit items-center gap-1.5 font-bold text-[color:var(--color-wine)] transition-colors duration-200 hover:text-[color:var(--color-cherry)]"
+                        className="squircle group/cta inline-flex min-h-[2.75rem] items-center justify-center gap-2 rounded-full bg-[color:var(--color-tint)] px-6 text-[0.9375rem] font-bold text-[color:var(--color-tint-ink)] transition duration-200 ease-sheet hover:-translate-y-0.5 hover:brightness-110 hover:shadow-[0_14px_30px_-12px_rgba(245,153,10,0.7)] active:translate-y-0 active:scale-[0.97]"
                       >
                         Preparar {recipe.name.toLowerCase()}
                         <span
                           aria-hidden
-                          className="transition-transform duration-200 ease-sheet group-hover:translate-x-1"
+                          className="transition-transform duration-200 ease-sheet group-hover/cta:translate-x-1"
                         >
                           →
                         </span>
@@ -320,7 +447,6 @@ export default function Portada() {
             })}
           </div>
         </div>
-
       </Field>
 
       {/* ----------------------------------------- gestures, on the green */}
@@ -329,7 +455,7 @@ export default function Portada() {
         tone="forest"
         curve="roll"
         glow="radial-gradient(60% 50% at 62% 6%, rgba(46,150,104,0.85), transparent 72%)"
-        className="py-16"
+        className="py-20 sm:py-24"
       >
         <Hummingbird
           className="pointer-events-none absolute right-2 top-6 hidden h-44 w-auto opacity-95 lg:block xl:right-8 xl:h-52"
@@ -341,19 +467,27 @@ export default function Portada() {
         />
 
         <div className="relative mx-auto w-full max-w-3xl px-6 sm:px-8">
-          <h2 className="max-w-md text-[clamp(1.625rem,4vw,2.25rem)] font-black tracking-[-0.02em]">
+          <span className="t-caption font-bold uppercase tracking-[0.18em] text-[color:var(--color-tint)]">
+            Cómo se juega
+          </span>
+          <h2 className="mt-3 max-w-md text-[clamp(1.625rem,4vw,2.25rem)] font-black tracking-[-0.02em]">
             Cuatro gestos y ya
           </h2>
-          <dl className="mt-7 grid gap-3 sm:grid-cols-2">
+          <dl className="mt-8 grid gap-3 sm:grid-cols-2">
             {GESTURES.map((gesture) => (
               <div
                 key={gesture.name}
-                className="squircle rounded-card border border-white/10 bg-white/[0.06] p-4 transition duration-300 ease-sheet hover:-translate-y-0.5 hover:border-[color:var(--color-tint)]/50 hover:bg-white/[0.12]"
+                className="squircle flex gap-3 rounded-card border border-white/10 bg-white/[0.06] p-4 transition duration-300 ease-sheet hover:-translate-y-0.5 hover:border-[color:var(--color-tint)]/50 hover:bg-white/[0.12]"
               >
-                <dt className="t-footnote font-bold text-[color:var(--color-tint)]">
-                  {gesture.name}
-                </dt>
-                <dd className="t-footnote mt-1 text-label-2">{gesture.says}</dd>
+                <span className="mt-0.5 text-[color:var(--color-tint)]">
+                  <GestureMark kind={gesture.mark} />
+                </span>
+                <div>
+                  <dt className="t-footnote font-bold text-[color:var(--color-tint)]">
+                    {gesture.name}
+                  </dt>
+                  <dd className="t-footnote mt-1 text-label-2">{gesture.says}</dd>
+                </div>
               </div>
             ))}
           </dl>
@@ -367,15 +501,32 @@ export default function Portada() {
               comprobarlo desconectando la red una vez cargado el juego.
             </p>
           </div>
-        </div>
 
+          <div className="mt-10 flex flex-wrap items-center gap-4">
+            <Link
+              href="/jugar"
+              className="squircle group inline-flex min-h-[3.25rem] items-center justify-center gap-2 rounded-full bg-[color:var(--color-tint)] px-8 text-[1.0625rem] font-bold text-[color:var(--color-tint-ink)] transition duration-200 ease-sheet hover:-translate-y-0.5 hover:brightness-110 hover:shadow-[0_16px_36px_-14px_rgba(245,153,10,0.75)] active:translate-y-0 active:scale-[0.97]"
+            >
+              Empezar a preparar
+              <span
+                aria-hidden
+                className="transition-transform duration-200 ease-sheet group-hover:translate-x-1"
+              >
+                →
+              </span>
+            </Link>
+            <span className="t-footnote text-label-3">
+              Pediremos la cámara al entrar. El ratón también vale.
+            </span>
+          </div>
+        </div>
       </Field>
 
       {/* -------------------------------------------- footer, on the deep */}
       <Field tone="deep" curve="hill" className="pb-10 pt-8">
-        <div className="relative mx-auto flex w-full max-w-3xl flex-wrap items-center justify-between gap-4 px-6 sm:px-8">
+        <div className="relative mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-4 px-6 sm:px-8">
           <p className="t-caption max-w-lg text-label-3">
-            Modelos de{" "}
+            Modelos y sonidos de{" "}
             <a
               href="https://kenney.nl"
               className="text-label-2 underline decoration-[color:var(--color-tint)]/50 underline-offset-2 transition-colors duration-200 hover:text-[color:var(--color-tint)] hover:decoration-[color:var(--color-tint)]"
@@ -384,8 +535,8 @@ export default function Portada() {
             >
               Kenney
             </a>{" "}
-            bajo CC0. Manos del kit de perfiles de entrada WebXR, MIT. Fotos de
-            los cafés por{" "}
+            bajo CC0 (incl. Digital Audio). Manos del kit de perfiles de entrada
+            WebXR, MIT. Fotos de los cafés por{" "}
             <a
               href="https://unsplash.com/@reinisbruzitis"
               className="text-label-2 underline decoration-[color:var(--color-tint)]/50 underline-offset-2 transition-colors duration-200 hover:text-[color:var(--color-tint)]"
@@ -411,8 +562,17 @@ export default function Portada() {
               rel="noreferrer noopener"
             >
               Alex Boyd
+            </a>
+            . La carta del juego,{" "}
+            <a
+              href="https://unsplash.com/@nickkimel"
+              className="text-label-2 underline decoration-[color:var(--color-tint)]/50 underline-offset-2 transition-colors duration-200 hover:text-[color:var(--color-tint)]"
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              Nick Kimel
             </a>{" "}
-            en Unsplash.
+            y Unsplash.
           </p>
           <nav className="flex flex-wrap gap-1">
             {[

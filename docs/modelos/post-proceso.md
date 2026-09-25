@@ -1,6 +1,6 @@
 # Post-proceso
 
-`components/coffee/grade.tsx` (330 líneas). Cuatro pasadas entre la escena y la
+`components/coffee/grade.tsx` (~380 líneas). Cuatro pasadas entre la escena y la
 pantalla.
 
 ## Las cuatro
@@ -26,6 +26,15 @@ Se aplica a los dos ejes, así que la proporción se conserva. En una pantalla
 ancha a DPR 2 eso ahorra cuatro megapíxeles de sombreado por fotograma, que es
 la mayor parte de la diferencia entre sesenta y treinta.
 
+Si el fotograma se pasa de 22 ms durante un rato, el tope baja solo hasta
+`MIN_PIXELS = 720_000`; si vuelve a 60 fps un segundo y pico, sube otra vez.
+El interruptor de bloom del HUD no se toca.
+
+Los tres destinos son `HalfFloatType` en espacio lineal. Un destino de 8 bits
+recortaba todo a 1, y el umbral de 1.02 —escrito para una escena sin tone
+mapping— no dejaba pasar nada: el bloom no encendía. Los destinos de bloom
+no llevan buffer de profundidad.
+
 ## El tone mapping doble
 
 **Éste fue un fallo real, y es la razón de `NoToneMapping` en el Canvas.**
@@ -50,17 +59,19 @@ Smoothstep y no corte duro: "a hard threshold makes bloom pop on and off as
 something drifts past it".
 
 ```
-uThreshold = 1.02
-uKnee      = 0.5
+uThreshold = 1.6
+uKnee      = 0.55
+uExposure  = 0.44
 ```
 
-El umbral **por encima de uno** (`:177-183`):
+El umbral **por encima de uno** (`grade.tsx`):
 
-> Porque la escena llega ahora sin tone mapping. El renderer aplicaba antes su
-> propia curva, que lo recortaba todo a 1 y dejaba este umbral escogiendo bloom
-> de los medios tonos. Con valores lineales reales una superficie iluminada queda
-> bien por debajo de 1 y **sólo pasan los altos de verdad — filamentos, el aro
-> dorado, el estallido.**
+> Porque la escena llega ahora sin tone mapping, y en un destino de 16 bits
+> el foco de 190 deja el mostrador en 1–3. Un umbral de 1.02 florecía la
+> barra entera y la sala se iba al melocotón. A 1.6 **sólo pasan los altos
+> de verdad — filamentos, el aro dorado, el estallido.** `uExposure` mete
+> esos valores HDR en el hombro de la curva en vez de recortarlos a 8 bits
+> otra vez.
 
 ## El desenfoque
 

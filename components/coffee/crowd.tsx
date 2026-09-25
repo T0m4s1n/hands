@@ -161,13 +161,18 @@ export function Crowd({ seats }: { seats: Seat[] }) {
     if (!painted.current) {
       painted.current = true;
       const shade = new Color();
+      const wardrobe: readonly [number, number, number][] = [
+        [0.34, 0.1, 0.12],
+        [0.22, 0.12, 0.08],
+        [0.4, 0.28, 0.2],
+        [0.16, 0.09, 0.08],
+        [0.28, 0.16, 0.1],
+      ];
       for (let i = 0; i < seats.length; i++) {
         const tone = seats[i].tone;
-        shade.setRGB(
-          0.055 + tone * 0.16,
-          0.06 + tone * 0.17,
-          0.075 + tone * 0.2,
-        );
+        const cloth = wardrobe[i % wardrobe.length];
+        const lift = 0.45 + tone * 0.7;
+        shade.setRGB(cloth[0] * lift, cloth[1] * lift, cloth[2] * lift);
         mesh.setColorAt(i, shade);
       }
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;

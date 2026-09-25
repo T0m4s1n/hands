@@ -69,12 +69,18 @@ dos porque un esqueleto tiene quiralidad propia y había que elegir cuál poners
 así que no hay malla que cargar, ni par espejado entre el que elegir, ni 184 KB
 que descargar. Ver [../logica/mano.md](../logica/mano.md).
 
-## `cafes/` — las tres fotografías
+## `cafes/` — las fotografías
 
-`tinto.png` (133 KB) · `espresso.png` (207 KB) · `capuchino.png` (260 KB).
+Recortes para la portada, escenas para la carta:
 
-PNG con canal alfa: son recortes, tazas flotando sin fondo. Se usan sólo en la
-portada (`app/page.tsx:82-94`).
+| Archivo | Dónde |
+| --- | --- |
+| `tinto.png` · `espresso.png` · `capuchino.png` | Portada, recortes con alfa |
+| `tinto-hero.jpg` · `espresso-hero.jpg` · `capuchino-hero.jpg` | Menú de `/jugar` |
+
+Los recortes se quedan en `app/page.tsx`. La carta usa las JPG a sangre
+(`recipeHero`). Origen: Unsplash. Los recortes, Reinis Bruzitis, Gabi Miranda y
+Alex Boyd; las escenas, Nick Kimel (tinto) y Unsplash (espresso, capuchino).
 
 Origen: fotografías con licencia Unsplash, recortadas con la máscara de primer
 plano de Vision (la misma que usa Fotos para «copiar sujeto») y recortadas a sus

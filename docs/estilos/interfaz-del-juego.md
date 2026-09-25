@@ -1,17 +1,33 @@
 # La interfaz del juego
 
-## `HandTrackedApp.tsx` (443 líneas)
+## `HandTrackedApp.tsx`
 
 La escena se carga con `dynamic(..., { ssr: false })`.
 
-### Las cuatro capas
+El arranque es una secuencia, no un menú suelto. Cada tramo entra y sale
+con un **iris** (`components/flow/IrisWipe.tsx`): el agujero se pinza de
+afuera hacia adentro (880 ms), se queda 120 ms en negro, y se abre de
+adentro hacia afuera (1040 ms). El borde va difuminado.
+
+| Fase | Componente | Qué pide |
+| --- | --- | --- |
+| `sync` | `HandSync` | Una mano estable 0,9 s. Las dos, si se puede |
+| `menu` | `RecipeMenu` | Carta: foto a sangre, tres nombres, hold o pellizco |
+| `brief` | `Briefing` | Tres golpes de cómo se juega; se puede saltar |
+| `count` | `Countdown` | 3 · 2 · 1 en el centro, al estilo Nintendo |
+| `play` | `StageHud` | El minijuego |
+| `results` | `Results` | Estrellas por proceso y una factura con el total |
+
+### Las capas
 
 | Capa | z | Qué es |
 | --- | --- | --- |
 | Escena | — | `absolute inset-0` |
 | HUD de etapa | 10 | La barra de abajo |
-| Menú / resultado | 20 | Sobre `scrim` |
-| Permiso de cámara | 30 | Encima de todo |
+| Fases de arranque / resultado | 20 | Sobre `gate-veil` (sync) o su propia capa |
+| Permiso de cámara | 30 | Encima de las fases |
+| Diagnóstico | 40 | Esquina |
+| Iris | 50 | Cubre todo el wipe |
 
 La barra superior es `pointer-events-none` con los grupos de botones
 reactivándolo, para no robar clics a la escena.
@@ -46,39 +62,50 @@ Debajo, un `Meter` cuyo **valor es el avance y cuyo color es la calidad** — do
 cosas distintas a propósito — y el `Scorecard`: una barra por etapa, «where you
 are, and what everything behind you scored».
 
-### La hoja de resultado
+### La reseña y la factura
 
-`:322-381`. "**The brew is judged, never repeated.**"
-
-Un `ScoreRing` con la nota sobre 100, la palabra de `grade()`, y las cinco
-etapas con su `Meter` y su número. Dos botones: «Otra vez» y «Cambiar de café».
+`components/flow/Results.tsx`. A la izquierda, cada proceso con su
+instrucción y **estrellas** (`stars()`, los mismos umbrales que `grade()`).
+A la derecha, una factura en crema: cabecera «La Mejor Taza», una línea
+por etapa, TOTAL, la palabra de la nota. «Otra vez» vuelve a la cuenta
+atrás; «Cambiar de café», al menú. Las dos con iris.
 
 ### El menú
 
-`:384-407`. «¿Qué preparamos?» y tres `RecipeCard`.
-
-`RecipeCard` (`:201-229`) es **un `<button>` entero**, no una tarjeta con un
-botón dentro: "The whole card is the target, not a button inside it."
-
-Al pie: «Pellizca con pulgar e índice para tomar. Abre la mano y la etapa se
-cierra con el puntaje que lleves.»
+`components/flow/RecipeMenu.tsx`. Una fotografía a sangre
+(`recipeHero`, `/cafes/{id}-hero.jpg`) y un velo a la izquierda. Tres
+nombres grandes: el de foco crece y enseña el `blurb`; a la derecha, el
+`pitch` y las etapas, sin hoja. Dejar la mano 1,05 s pide el café; también
+pellizcar o clic. Una raya ámbar se llena mientras espera.
 
 ### El permiso
 
-`:409-440`. Hoja centrada con el glifo de taza, el título y un texto que cambia
-según `loading`. Cierra con «El seguimiento corre en tu navegador. No se sube
-nada.»
+`components/flow/CameraGate.tsx`. No hay hoja. Al montar pide la cámara
+sola (`requestCamera()`). Mientras espera, el título «Café a mano» flota
+y la taza echa vapor. Si el navegador deniega, no puede preguntar, o el
+aviso se queda colgado más de 2,8 s, la taza llora, el título pasa a
+«La taza no te ve», y salen **en fila** «Continuar con el ratón» y
+«Aceptar cámara». El velo es un radial, no `scrim`: la sala se sigue
+viendo.
 
-## `EnableCameraButton.tsx` (184 líneas)
+El laboratorio (`/manos`) sigue usando `EnableCameraButton`.
 
-Un botón primario, un `plain` para «Continuar con el ratón», la pista de uso con
-ratón, y un `<details>` de diagnóstico cuyo `<summary>` lleva `list-none` para
-matar el triángulo nativo (el anillo de foco global incluye `summary` a
-propósito).
+### La sincronización
+
+`components/flow/HandSync.tsx`. Tampoco hay hoja. «Sincronicemos» en
+ámbar y «las manos» a flote, dos palmas SVG: saludan en espera, se tensan
+al verse, cara y anillo ámbar al trabar. El texto de abajo dice si falta
+una. Una palma estable 0,9 s basta; 0,55 s más y el iris abre el menú.
+
+## `EnableCameraButton.tsx`
+
+Sólo `/manos`. Un botón primario, un `plain` para «Continuar con el ratón»,
+la pista de uso con ratón, y un `<details>` de diagnóstico cuyo `<summary>`
+lleva `list-none` para matar el triángulo nativo.
 
 > **Nota de idioma**: toda la interfaz de este componente está en español, pero
-> las cinco cadenas de `describeCameraError` (`:15-33`) y el bloque de
-> diagnóstico están **en inglés**.
+> las cadenas de `describeCameraError` en `hooks/requestCamera.ts` y el bloque
+> de diagnóstico están **en inglés**.
 
 ## `DebugOverlay.tsx` (195 líneas)
 
@@ -92,11 +119,11 @@ de vídeo y necesita contraste:
 | Landmarks del pellizco (4 y 8) | `#facc15`, radio 6 |
 | El resto de landmarks | `#f8fafc`, radio 3.5 |
 
-Los puntos verdes de `/manos` (`components/LandmarkDots.tsx`) se dibujan **al
-tamaño fijo del guante**, no al tamaño aparente con que los reporta la cámara.
-Sin ese reescalado la superposición no puede hacer su trabajo: una mano cerca de
-la cámara produce una nube mucho mayor que el guante de tamaño fijo, los dos
-nunca cuadran, y **cualquier desacuerdo parece enorme haya o no algo roto**.
+Los puntos verdes de `/manos` (`components/LandmarkDots.tsx`) corren el mismo
+`poseCloud` que la mano — tamaño fijo, profundidad estirada, media vuelta
+dorsal. Si se saltaba cualquiera de los dos últimos, los puntos se quedaban
+en la palma y la mano mostraba el dorso: la única vista pensada para
+separar tracking de dibujo no cuadraba con ninguno.
 
 **Cuando está oculto el vídeo sigue montado** en un contenedor de 1×1 píxel con
 `opacity-0` (`:102-110`): "The video element must stay mounted and playing (the
@@ -122,15 +149,11 @@ Cuatro mandos (`KNOBS`, `:17-57`), cada uno con su pista:
 | Amortiguación de profundidad | 0.05–1 | «La profundidad es el eje más ruidoso» |
 | Profundidad de la mano | 0–4 | «Más alto separa los dedos en profundidad y se tapan entre ellos» |
 
-Y un interruptor, **«Placa de palma»**. Los que había para elegir cara y modelo
+Y dos interruptores: **«Dorso hacia el jugador»** y **«Placa de palma»**. Los que había para elegir cara y modelo
 desaparecieron con el rig: la mano se arma sobre los puntos, así que la
-lateralidad sale sola.
+lateralidad sale sola. Un tercero, **«Mostrar puntos del tracking»**, enciende
+los puntos verdes, que corren el mismo `poseCloud` que la mano.
 
 Escriben sobre el objeto mutable `handTuning` de `RobotHand.tsx`, así que se
 afinan contra una cámara viva sin recompilar. Ver
 [../logica/mano.md](../logica/mano.md).
-
-Tres interruptores: mostrar puntos, dorso hacia el jugador, invertir elección de
-modelo. Con la nota: «La cara mostrada y el modelo se eligen solos a partir de
-los puntos. El interruptor de abajo solo hace falta si la regla salió
-invertida.»

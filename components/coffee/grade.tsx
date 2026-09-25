@@ -4,7 +4,9 @@ import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import type { WebGLRenderer } from "three";
 import {
+  HalfFloatType,
   LinearFilter,
+  LinearSRGBColorSpace,
   Mesh,
   OrthographicCamera,
   PlaneGeometry,
@@ -42,11 +44,14 @@ import {
 export const effects = { bloom: true };
 
 /**
- * The most pixels the scene is ever shaded at. Everything above this is spent
- * on detail nobody can see on a moving image, and it is the first thing to go
- * when the frame rate does.
+ * Cap on shaded pixels. High enough that Retina hands stay sharp; the
+ * adaptive loop still drops toward MIN if frames lag.
  */
-const MAX_PIXELS = 2_100_000;
+const MAX_PIXELS = 3_600_000;
+/** Floor for the adaptive cap — roughly 1080p, not soft 720p. */
+const MIN_PIXELS = 1_100_000;
+/** Start balanced, then earn more resolution only when the device is fast. */
+const START_PIXELS = 2_200_000;
 /** How much smaller the blur buffers are than the scene. */
 const BLOOM_DIVISOR = 4;
 
@@ -102,6 +107,7 @@ const COMPOSITE_FRAGMENT = /* glsl */ `
   uniform sampler2D uScene;
   uniform sampler2D uBloom;
   uniform float uBloomStrength;
+  uniform float uExposure;
   uniform float uVignette;
   varying vec2 vUv;
 
@@ -125,7 +131,7 @@ const COMPOSITE_FRAGMENT = /* glsl */ `
   }
 
   void main() {
-    vec3 colour = texture2D(uScene, vUv).rgb;
+    vec3 colour = texture2D(uScene, vUv).rgb * uExposure;
     colour += texture2D(uBloom, vUv).rgb * uBloomStrength;
 
     colour = shoulder(colour * 1.05);
@@ -154,13 +160,19 @@ type Rig = {
   height: number;
 };
 
-function target(width: number, height: number) {
-  return new WebGLRenderTarget(width, height, {
+function target(width: number, height: number, depthBuffer: boolean) {
+  const rt = new WebGLRenderTarget(width, height, {
     format: RGBAFormat,
+    type: HalfFloatType,
     minFilter: LinearFilter,
     magFilter: LinearFilter,
-    depthBuffer: true,
+    depthBuffer,
   });
+  // Linear, so values above one survive into the bright pass. An 8-bit
+  // target clamped everything to 1, and the threshold of 1.02 — written
+  // for an untonemapped scene — then kept nothing, so bloom never fired.
+  rt.texture.colorSpace = LinearSRGBColorSpace;
+  return rt;
 }
 
 function makeRig(width: number, height: number): Rig {
@@ -172,6 +184,7 @@ function makeRig(width: number, height: number): Rig {
     fragmentShader: BRIGHT_FRAGMENT,
     depthTest: false,
     depthWrite: false,
+    toneMapped: false,
     uniforms: {
       uScene: { value: null },
       /*
@@ -181,8 +194,14 @@ function makeRig(width: number, height: number): Rig {
        * linear values a lit surface sits well under one and only genuine
        * highlights — filaments, the gold ring, the burst — pass.
        */
-      uThreshold: { value: 1.02 },
-      uKnee: { value: 0.5 },
+      /*
+       * Well above one. A spotlight of 190 leaves the counter itself at
+       * 1–3 in a half-float buffer, so a threshold of 1.02 bloomed the
+       * whole bar and the room went peach. Lamps, the gold ring and the
+       * burst still clear 1.6; the wood does not.
+       */
+      uThreshold: { value: 1.6 },
+      uKnee: { value: 0.55 },
     },
   });
   const blurMaterial = new ShaderMaterial({
@@ -190,6 +209,7 @@ function makeRig(width: number, height: number): Rig {
     fragmentShader: BLUR_FRAGMENT,
     depthTest: false,
     depthWrite: false,
+    toneMapped: false,
     uniforms: {
       uSource: { value: null },
       uStep: { value: new Vector2() },
@@ -200,11 +220,13 @@ function makeRig(width: number, height: number): Rig {
     fragmentShader: COMPOSITE_FRAGMENT,
     depthTest: false,
     depthWrite: false,
+    toneMapped: false,
     uniforms: {
       uScene: { value: null },
       uBloom: { value: null },
-      uBloomStrength: { value: 0.85 },
-      uVignette: { value: 0.32 },
+      uBloomStrength: { value: 0.55 },
+      uExposure: { value: 0.5 },
+      uVignette: { value: 0.22 },
     },
   });
 
@@ -214,9 +236,9 @@ function makeRig(width: number, height: number): Rig {
   view.add(quad);
 
   return {
-    scene: target(width, height),
-    bright: target(small, shorter),
-    blur: target(small, shorter),
+    scene: target(width, height, true),
+    bright: target(small, shorter, false),
+    blur: target(small, shorter, false),
     brightMaterial,
     blurMaterial,
     compositeMaterial,
@@ -229,13 +251,25 @@ function makeRig(width: number, height: number): Rig {
 }
 
 /** The scene's render size, capped so a retina display cannot run away with it. */
-function shadingSize(width: number, height: number) {
+function shadingSize(width: number, height: number, cap: number) {
   const pixels = Math.max(1, width * height);
-  const scale = Math.min(1, Math.sqrt(MAX_PIXELS / pixels));
+  const scale = Math.min(1, Math.sqrt(cap / pixels));
   return {
     width: Math.max(1, Math.round(width * scale)),
     height: Math.max(1, Math.round(height * scale)),
   };
+}
+
+function disposeRig(rig: Rig | null) {
+  if (!rig) return;
+  rig.scene.dispose();
+  rig.bright.dispose();
+  rig.blur.dispose();
+  rig.brightMaterial.dispose();
+  rig.blurMaterial.dispose();
+  rig.compositeMaterial.dispose();
+  rig.quad.geometry.dispose();
+  rig.view.clear();
 }
 
 export function GradePass() {
@@ -245,33 +279,55 @@ export function GradePass() {
   const size = useThree((state) => state.size);
   const dpr = useThree((state) => state.viewport.dpr);
   const rigRef = useRef<Rig | null>(null);
+  const adaptRef = useRef({ pixels: START_PIXELS, slow: 0, fast: 0 });
 
   // Built once on mount at a nominal size, then resized by the frame loop.
   // Creating it inside the loop instead would mean assigning a ref that the
   // cleanup below already closes over, which is exactly the tangle the React
   // compiler refuses to let through.
+  //
+  // Rebuilt on context restore as well: a lost context leaves every render
+  // target invalid, and without a new rig the pass keeps drawing into
+  // nothing — a blank canvas with no explanation, the same failure
+  // GraphicsGuard is there to catch.
   useEffect(() => {
-    rigRef.current = makeRig(1280, 720);
+    const build = () => {
+      disposeRig(rigRef.current);
+      rigRef.current = makeRig(1280, 720);
+    };
+    build();
+    const canvas = gl.domElement;
+    canvas.addEventListener("webglcontextrestored", build);
     return () => {
-      const rig = rigRef.current;
-      if (!rig) return;
-      rig.scene.dispose();
-      rig.bright.dispose();
-      rig.blur.dispose();
-      rig.brightMaterial.dispose();
-      rig.blurMaterial.dispose();
-      rig.compositeMaterial.dispose();
-      rig.quad.geometry.dispose();
-      rig.view.clear();
+      canvas.removeEventListener("webglcontextrestored", build);
+      disposeRig(rigRef.current);
       rigRef.current = null;
     };
-  }, []);
+  }, [gl]);
 
   // Priority above zero means this owns the render loop.
-  useFrame(() => {
+  useFrame((_, delta) => {
+    const adapt = adaptRef.current;
+    if (delta > 0.022) {
+      adapt.slow += 1;
+      adapt.fast = 0;
+      if (adapt.slow > 14 && adapt.pixels > MIN_PIXELS) {
+        adapt.pixels = Math.max(MIN_PIXELS, Math.round(adapt.pixels * 0.84));
+        adapt.slow = 0;
+      }
+    } else if (delta < 0.0165) {
+      adapt.fast += 1;
+      adapt.slow = 0;
+      if (adapt.fast > 150 && adapt.pixels < MAX_PIXELS) {
+        adapt.pixels = Math.min(MAX_PIXELS, Math.round(adapt.pixels / 0.92));
+        adapt.fast = 0;
+      }
+    }
+
     const wanted = shadingSize(
       Math.max(1, Math.round(size.width * dpr)),
       Math.max(1, Math.round(size.height * dpr)),
+      adapt.pixels,
     );
 
     const rig = rigRef.current;
@@ -321,7 +377,7 @@ export function GradePass() {
     rig.quad.material = rig.compositeMaterial;
     rig.compositeMaterial.uniforms.uScene.value = rig.scene.texture;
     rig.compositeMaterial.uniforms.uBloom.value = rig.bright.texture;
-    rig.compositeMaterial.uniforms.uBloomStrength.value = effects.bloom ? 0.85 : 0;
+    rig.compositeMaterial.uniforms.uBloomStrength.value = effects.bloom ? 0.55 : 0;
     gl.setRenderTarget(null);
     gl.render(rig.view, rig.camera);
   }, 1);

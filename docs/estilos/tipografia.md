@@ -23,12 +23,13 @@ más grande, más sobra el espacio entre letras.
 
 ## Titulares fuera de la escala
 
-La portada no usa la escala para sus titulares. Usa `clamp()` directo, porque
-tienen que responder al ancho:
+La portada y el permiso no usan la escala para sus titulares. Usan `clamp()`
+directo, porque tienen que responder al ancho:
 
 - `h1`: `text-[clamp(2.5rem,6.5vw,4.25rem)] font-black leading-[0.98] tracking-[-0.02em]`
 - `h2` de sección: `text-[clamp(1.625rem,4vw,2.25rem)] font-black tracking-[-0.02em]`
 - `h3` de tarjeta: `text-[1.5rem] font-black tracking-[-0.02em]`
+- permiso y sync (`.gate-title`): `clamp(2.75rem, 12vw, 7.5rem)`, peso 700, tracking −0.045em
 
 `font-black` (900) es el peso de la marca para gritar. La escala `t-*` no llega
 tan arriba a propósito: es para interfaz, no para carteles.

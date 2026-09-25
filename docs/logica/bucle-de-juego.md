@@ -115,7 +115,17 @@ etapa en vez de heredar "a stale carry height from the last stage", que
 
 El prensado sólo cuenta la mitad de bajada, "so lifting the tamper back up
 between presses never scores twice". Además `grow.velocity -= 5` y
-`swell.velocity += 0.8`: "The press lands with a thump."
+`swell.velocity += 0.8`: "The press lands with a thump." El tamper **baja
+con el golpe** (`position.z -= 0.14` mientras `stroke.dir < 0`), para que un
+prensa se vea aterrizar y no sólo sume un número.
+
+La jarra de `shake` se tambalea al ritmo del golpe. Un sacudido que sólo
+subía un contador se leía como un número que crecía sin motivo.
+
+Los puntos guía ya no son sólo de `place` en reposo: un `crank` marca el
+círculo del mortero, y `hold` / `tilt` / `tamp` dibujan el arco hacia la
+marca mientras el objeto viaja. Se ocultan al llegar — un camino a donde
+ya estás es ruido.
 
 ## Rebose
 

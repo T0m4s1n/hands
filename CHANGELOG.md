@@ -11,6 +11,245 @@ sirve de nada dentro de seis meses.
 
 ## Sin publicar
 
+### El vaciado se lee y la mano deja de pelearse
+
+- El vaciado ahora tiene **arranque, vuelco y espera**: la muñeca y
+  la cuchara usan la misma curva; los granos salen de la pala y
+  rebotan en el bowl.
+- El guante **ya no se imanta** al acercarse a un objeto. Un puño
+  flojo de webcam no agarra. El aim vuelve a la palma, no a un
+  close-up corregido de más.
+
+### La mano ya no se hunde al acercarla
+
+- Acercar la mano a la cámara agranda la imagen y **empuja la muñeca
+  al borde de abajo**; eso se leía como el guante cayendo al frente
+  de la barra. El aim sale de los nudillos y un close-up se levanta.
+- La altura queda fija en `HAND_HOVER`. El agarre ya no tira el
+  modelo contra la mesa.
+
+### Cada herramienta tiene su agarre
+
+- El pulgar **sigue a los otros cuatro dedos**. Ya no usa su landmark
+  propio: ese salto era el movimiento raro.
+- Cada herramienta tiene una **pose diseñada** (manivela, cuchara,
+  taza, jarra, tetera, filtro, portafiltro, prensador). Al acercarse
+  el puño busca el mango; al agarrar se sienta encima y lo envuelve.
+
+### El puño cierra de verdad
+
+- MediaPipe deja un puño de selfie **casi recto en 3D**; solo se
+  aplasta en la imagen. El pliegue ahora usa ese colapso en XY, no
+  solo la flexión 3D, y un puño a medias ya cuenta para el latch.
+- El monigote cierra con ease-out, suelo 0,88 al agarrar, y el pulgar
+  se cruza. Cerrar es más rápido que abrir.
+
+### El guante deja de temblar en reposo
+
+- En vivo se perseguía **siempre** a 120/48: el ruido de la webcam
+  (unos milímetros de muñeca) iba directo al modelo. Ahora el chase
+  es lento bajo un umbral y solo se abre en un gesto de verdad.
+- La palma cree menos la profundidad (tilt 0,28) y los cuatro puntos
+  que la orientan van suavizados. El filtro de luz no cambia si el
+  brillo apenas se movió.
+
+### El guante y el esqueleto coinciden
+
+- La mano izquierda **se espejaba dos veces**: `palmFrame` ya apunta +X
+  al meñique y encima el guante hacía `scale.x = -1`. El pulgar del
+  modelo caía del lado del meñique; los puntos verdes decían lo
+  contrario. Ahora ningún lado se vuelve a espejar.
+- Orientación y puntos salen de **la misma nube posada** (`hand.posed`),
+  no de landmarks crudos en el guante y suavizados en el overlay.
+- El seguimiento es más vivo (giro 48, pliegue 22) y se evita el
+  segundo pass de luz si la habitación ya está clara.
+
+### El reconocimiento deja de aferrarse a un esqueleto roto
+
+- **No hay un modelo sucesor publicado.** MediaPipe Hands sigue siendo el
+  landmarker del navegador; lo que fallaba no era «usar el paquete
+  viejo», era mandarle un 480p oscuro y dejar que el tracker ligero
+  arrastrara la caja cuando los huesos ya no eran una mano.
+- La cámara pide **1280×720** de frente. El fotograma se **espeja,
+  reduce a 960** y, si está oscuro, se **levanta la exposición** antes
+  de inferir. Un esqueleto colapsado se descarta y se costa.
+- Se carga **float32** si existe, si no `float16/latest`, si no el
+  float16 pinneado. La profundidad de los dedos sale de
+  `worldLandmarks` (más estable) mezclada con el xy de la imagen.
+- `minHandPresenceConfidence` vuelve a 0,55 y el tracking a 0,5: si
+  el modelo duda, **re-detecta la palma** en vez de seguir un box
+  fantasma.
+
+### Una persona, dos manos
+
+- El landmarker ahora **mira hasta cuatro** detecciones y el tracker se
+  queda con **dos como máximo**, y sólo si parecen del mismo cuerpo
+  (altura, tamaño de palma, distancia tipo hombros). Si hay dos
+  extraños en el cuadro, cada uno con una mano, no se les da un
+  guante a cada uno: se sigue a uno.
+- Quien ya estaba jugando **no pierde los guantes** porque alguien
+  cruzó detrás. El par se ancla a las muñecas que ya se seguían.
+
+### La primera vista de `/` vuelve a ser una portada
+
+- **El héroe llena la pantalla.** Titular corto («Prepara café con las
+  manos») y la figura a la derecha, a sangre del hueco, sin las fichas
+  flotantes de las tres tazas. Esas tazas viven en la carta, no encima
+  de la chica.
+- **La carta recupera las fotos.** Cada receta alterna taza y texto,
+  con el recorte flotando sobre el color del café. El texto solo se
+  leía como una lista; ahora se lee como tres bebidas.
+- **Los gestos tienen marca.** Un trazo por cada uno, y un segundo
+  botón de empezar al pie de esa sección. Las clases nuevas
+  (`portada-cup`, `portada-figure`) viven solo en la portada.
+
+### El vertido deja de ser un collar de bolas
+
+- **El chorro era literalmente dieciséis esferas** ensartadas por el arco
+  (`sphereGeometry(0.095)` instanciada). Las cuentas son fáciles y son falsas:
+  el café no cae como una fila de canicas, y a cualquier caudal real lo que el
+  ojo caza son los huecos entre ellas. Se leía como un collar.
+- Ahora es **un tubo continuo**: una rejilla fija de 16 anillos × 8 lados que se
+  recorre cada fotograma y **no se reconstruye nunca**. Eso importa: regenerar
+  una `TubeGeometry` por fotograma es la forma obvia de hacer esto y asigna un
+  juego de búferes sesenta veces por segundo, que es como un vertido se
+  convierte en un tirón.
+- **Deliberadamente no es una simulación de fluidos.** Los fluidos en espacio de
+  pantalla o por FBO se ven magníficos y cuestan un presupuesto de fotograma que
+  esta escena ya gastó en el café; un tubo cónico con algo de estrangulamiento se
+  lee como un vertido desde un metro, que es donde está el jugador.
+- **El derrame era un disco plano.** Ahora es una media esfera achatada: un
+  charco tiene menisco, se abomba en el borde y recoge un brillo por el centro,
+  y un disco no hace ninguna de las dos cosas — iluminado desde arriba es un
+  círculo pintado.
+- **Subida la altura de vertido** de 1.15 a 2.35. Detalle que costó ver: es un
+  **suelo**, no la altura, y `carryOver` ya levantaba la tetera hasta ~1.6 por su
+  cuenta. Subirlo a 1.7 compró nueve centésimas y se veía idéntico. El número
+  tiene que superar lo que la regla de colisión ya hacía antes de cambiar nada.
+
+### Arreglado
+
+- `useHandCursor` escribía un ref **durante el render**, que es justo lo que el
+  React Compiler rechaza. Movido a un efecto.
+
+
+### La carta, de verdad
+
+- **Se acabaron las barras al sesgo y la tarjeta.** El menú es una
+  fotografía a sangre que cambia con el foco, tres nombres grandes a la
+  izquierda y el pitch a la derecha, sin hoja. Las barras de Persona 3
+  tapaban la sala y se leían como un HUD, no como una carta.
+- **Fotos nuevas** (`/cafes/{id}-hero.jpg`): tinto es una jarra de
+  filtrado, espresso la crema de cerca, capuchino un rosetón sobre
+  madera. Los recortes de arriba (`*.png`) se quedan en la portada.
+- **Pedir es dejar la mano** un segundo sobre el nombre, o pellizcar, o
+  hacer clic. Una barra ámbar se llena para que se vea venir.
+
+### El iris, al revés, y «Sincronicemos las manos»
+
+- **El iris cierra de afuera hacia adentro** y abre de adentro hacia
+  afuera. Antes era un manchón negro que crecía desde el centro (un
+  `clip-path` de círculo). Ahora el velo tiene un agujero (`mask` +
+  `--iris`) que se pinza y se abre, como un diafragma. El radio va en
+  `vmax` para que el círculo se vea la mayor parte del tiempo, no sólo
+  al final. El borde va difuminado (`--iris-soft`) y se aprieta al
+  cerrar. 880 ms al pinzar, 120 ms en negro, 1040 ms al abrir.
+- **Los textos de la sync** pasan a «Sincronicemos» / «las manos». Se
+  leía como un rótulo técnico; esto es la instrucción.
+
+### La sincronización, sin tarjeta
+
+- **Ya no es una hoja.** Mismo lenguaje que el permiso: título grande a
+  flote y dos palmas SVG. Saludan mientras esperan, se tensan al verse y
+  se quedan en ámbar al trabar. La tarjeta tapaba la sala y se leía como
+  un diálogo encima del café, no como parte de él. El tiempo no cambia:
+  0,9 s para trabar, una mano basta, 0,55 s más y entra el menú.
+
+### El permiso, sin tarjeta
+
+- **Se pide la cámara al entrar.** Si el navegador ya la tenía concedida o
+  deja preguntar, no hay menú: el stream llega y sigue el arranque. Si el
+  aviso se queda colgado (no hay gesto, o el diálogo no aparece) a los
+  2,8 s sale el menú igual. El `getUserMedia` redundante vive en
+  `hooks/requestCamera.ts`.
+- **Si no se puede**, no hay hoja. Título grande a flote, taza SVG que
+  llora (o echa vapor mientras espera), y dos botones en fila:
+  «Continuar con el ratón» y «Aceptar cámara». La tarjeta de permiso
+  tapaba la sala y se leía como un diálogo, no como el café.
+
+### El arranque, por tramos, con iris
+
+- **Sincronización de manos.** Tras la cámara, hay que dejarlas a la
+  vista hasta que una se quede 0,9 s. Las dos es lo educado; con una
+  basta. Sin este paso el menú se abría sobre un tracking que aún
+  parpadeaba.
+- **Iris de Nintendo** entre cada tramo (cierra 420 ms, abre 520 ms).
+  Sync, menú, briefing, cuenta atrás, juego y resultados llegan igual.
+- **Menú al estilo Persona 3**, en los colores de la casa: tres barras
+  horizontales al sesgo a la izquierda. Al pasar la mano, a la derecha
+  sale la PNG del café, el `pitch` y las cinco etapas.
+- **Briefing que se puede saltar**, tres golpes (pellizca, lleva, una
+  vez), y un **3-2-1** en el centro. El juego no arranca debajo del 1:
+  arranca cuando el 1 ya se fue.
+- **Reseña con estrellas** por proceso y una **factura** con el total.
+  `stars()` usa los mismos umbrales que `grade()`, para que un «Muy
+  bueno» no salga con cinco estrellas.
+
+### Shaders, manos y las etapas, de verdad
+
+- **El bloom no encendía.** La pasada de grado escribía la escena en un
+  destino de 8 bits, que recorta todo a 1, y el umbral del brillo está en
+  1.02 a propósito (la escena llega sin tone mapping). Nada pasaba el
+  corte, así que el desenfoque trabajaba sobre negro. Los tres destinos
+  pasan a `HalfFloatType` en espacio lineal; los de bloom no gastan
+  profundidad. El umbral sube a 1.6 y hay exposición 0.62: con HDR de
+  verdad el foco de 190 dejaba el mostrador por encima de 1 y la sala
+  se iba al melocotón. Exposición 0.44 mete esos valores en el hombro.
+- **El cel de la mano era pintura plana.** `meshToonMaterial` muestrea su
+  rampa contra la luz acumulada, y el foco de la sala es 190 para que el
+  metal haga bloom. Ese número clava cada muestra en el último peldaño.
+  Shader propio (`handToon.ts`): half-Lambert contra la cámara, rampa
+  `NoColorSpace`, un ribete. El toon de three no puede hacer este trabajo
+  en esta sala.
+- **Los puntos de `/manos` no coincidían con la mano.** Sólo aplicaban el
+  candado de tamaño; se saltaban el estirado de profundidad y la media
+  vuelta dorsal, así que con el dorso activo los puntos se quedaban en la
+  palma. Extraído `poseCloud` y lo corren los dos.
+- **La placa de palma daba media vuelta** cuando la mano iba de canto: el
+  palmo entre nudillos se colapsa a ruido y la normal se invierte.
+  `keepFacing` rechaza un flip de 180° y deja pasar un giro de verdad.
+- **Las etapas no se veían hacer lo que contaban.** La jarra no se
+  tambaleaba al agitar, el tamper no bajaba al prensar, el chorro salía
+  de un punto fijo y los puntos guía sólo existían en `place`. Ahora cada
+  gesto mueve su objeto, el chorro sale del pico al inclinar, y hay guía
+  en moler, sostener, verter y prensar — y se apaga al llegar.
+- **El sombreado baja solo si el fotograma se arrastra** (tope de píxeles
+  de 2.1 M a 720 k) y sube otra vez a 60 fps. El interruptor de bloom no
+  se toca. El laboratorio deja el mapa de sombras en 1024²; los granos en
+  reposo no reescriben matrices. La pasada de grado se reconstruye si el
+  contexto WebGL vuelve.
+
+### La mano: dorso hacia el jugador, y proporciones arregladas
+
+- **El dorso mira al jugador.** Una webcam ve el lado que le apuntes, y lo que
+  la gente apunta a una cámara es la palma; al alcanzar algo sobre una mesa uno
+  ve el dorso. `turnOver()` le da media vuelta **sobre el eje de la propia
+  mano**: una rotación, no un espejo. Espejar mostraría el dorso igual de bien y
+  convertiría una mano izquierda en una derecha — el fallo contra el que peleó
+  mil líneas el rig viejo. Tres pruebas, una de ellas sobre la quiralidad.
+- **Arregladas las proporciones.** El grosor del hueso salía del extremo **más
+  fino**, así que cada hueso era más estrecho que el nudillo de encima y cada
+  articulación destacaba como una bola en un palo: un racimo de uvas. Ahora sale
+  del más grueso, y un nudillo es un bulto en una salchicha.
+- **Bajado el grito del oro.** Las articulaciones eran otro *color*, no otro
+  *tono*: oro saturado sobre crema se leía como cuentas ensartadas en un hilo
+  blanco, y en movimiento las cuentas era lo único que se veía. La mano parecía
+  una pulsera.
+- **El puño era un donut** que dominaba la imagen: reducido a la mitad.
+- **La placa de palma era una paleta** del tamaño de la mano entera, con las
+  raíces de los dedos enterradas detrás. Ahora es más pequeña que la mano que la
+  lleva y los puntales se ven por los dos lados.
+
 ### La mano, de caricatura y con profundidad real
 
 - **Sombreado cel.** Todo pasa a `meshToonMaterial` contra una rampa de cuatro

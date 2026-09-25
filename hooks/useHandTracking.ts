@@ -1,7 +1,28 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { assignHands } from "./handAssignment";
+import {
+  anatomicalHandedness,
+  DETECT_HAND_CANDIDATES,
+} from "./handAssignment";
+import { prepareDetectFrame, type DetectFrame } from "./handFrame";
+import { blendWorldDepth, keepGoodHands } from "./handQuality";
+import { posedPalm, poseHandWorld } from "./handPose";
+import { aimWorld, HAND_HOVER, parkCloudAtAim } from "./handAim";
+import { applyGrabLatch, type GrabThresholds } from "./grabLatch";
+import { trackFrame, type PersistedHand } from "./trackFrame";
+import {
+  getAimWorldY,
+  screenFromHand as aimScreenFromHand,
+  setAimWorldY,
+  WORLD_X as AIM_WORLD_X,
+} from "./screenAim";
+import {
+  extrapolateCursor,
+  landmarkVelocityToWorld,
+} from "./handMotion";
+
+export { applyGrabLatch, type GrabThresholds };
 
 export type Handedness = "Left" | "Right";
 
@@ -9,11 +30,26 @@ export type Vec3 = { x: number; y: number; z: number };
 
 export type TrackedHand = {
   handedness: Handedness;
+  /** Live detector output, or a short frozen bridge over a missed frame. */
+  tracking?: "live" | "coasting";
   landmarks: Vec3[];
   smoothedLandmarks: Vec3[];
   cursor: Vec3;
   pinchDistance: number;
   isGrabbing: boolean;
+  /** Cached world probes so the game does not re-pose every frame. */
+  grabPoints?: Vec3[];
+  /**
+   * The 21 posed world points (lockSpan + deepen). Glove, dots and grab
+   * all read this so they cannot disagree about where a knuckle is.
+   */
+  posed?: Vec3[];
+  /** Classifier confidence for the anatomical left/right identity. */
+  identityConfidence?: number;
+  /** Milliseconds bridged since the detector last saw this hand. */
+  missingForMs?: number;
+  /** Palm velocity on the table, world units per second. */
+  motion?: Vec3;
   /**
    * How far the wrist is rolled, in radians, when the input can say so
    * directly. Camera tracking cannot — it has to be read off the landmarks —
@@ -30,11 +66,6 @@ export type TrackingStatus =
   | "denied"
   | "error";
 
-export type GrabThresholds = {
-  enter: number;
-  exit: number;
-};
-
 export type HandHud = {
   handedness: Handedness;
   pinchDistance: number;
@@ -43,61 +74,41 @@ export type HandHud = {
 
 const WASM_URL =
   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm";
-const MODEL_URL =
-  "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 const MEDIAPIPE_MODULE_URL =
   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs";
-
 /**
- * How hard the landmarks are smoothed, and the rule that decides.
- *
- * A fixed blend per frame is the wrong tool twice over. It smooths a hand that
- * is racing across the frame exactly as hard as one resting on the counter, so
- * fast movement arrives late — the lag people actually feel — while slow
- * movement still shimmers. And because it is per frame rather than per second,
- * the same setting behaves differently at thirty and at a hundred and twenty.
- *
- * So: smooth hard when the hand is still, barely at all when it is moving, and
- * scale by how long the frame took.
+ * Newest published bundle first. float32 is the same architecture with less
+ * quantisation noise on the bones; if that file is missing we walk down to
+ * Google's rolling "latest" and finally the pinned float16 everyone hosts.
  */
-const STILL_RATE = 14;
-const MOVING_RATE = 90;
-/** How far a landmark travels in a frame before it counts as moving. */
-const MOVING_SPAN = 0.045;
-const MAX_HANDS = 2;
-const DROP_AFTER_MISSED_FRAMES = 8;
+const MODEL_CANDIDATES = [
+  "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float32/1/hand_landmarker.task",
+  "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task",
+  "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+] as const;
+
+const MAX_HANDS = DETECT_HAND_CANDIDATES;
 const HUD_INTERVAL_MS = 80;
+/**
+ * MediaPipe inference is the expensive part, not drawing the interpolated
+ * glove. Thirty-six fresh poses per second keep a swipe honest; R3F then
+ * extrapolates the last motion so the mitt does not sit still between samples.
+ */
+const DETECTION_INTERVAL_MS = 1000 / 42;
 
-const DEFAULT_THRESHOLDS: GrabThresholds = { enter: 0.32, exit: 0.52 };
+/** Generous enter so a natural pinch counts; exit stays open for hysteresis. */
+const DEFAULT_THRESHOLDS: GrabThresholds = { enter: 0.46, exit: 0.68 };
 
-const WORLD_X = 7;
-// Landmarks are normalised separately over the frame's width and height, so the
-// two axes only carry the same physical distance once the frame's shape is
-// divided back out. Getting this wrong squashes the hand along one axis, which
-// then reads as foreshortening and curls fingers that are in fact straight.
-// Holds a 4:3 guess until the camera reports its real frame.
-let worldY = WORLD_X * 0.75;
+const WORLD_X = AIM_WORLD_X;
 
 export function setFrameShape(width: number, height: number) {
-  if (width > 0 && height > 0) worldY = WORLD_X * (height / width);
+  setAimWorldY(width, height);
 }
 
 
 const WORLD_Z = 1.4;
-/**
- * The height the hands ride above the counter.
- *
- * Fixed, on purpose. This used to be driven by how near the camera the hand
- * looked, against a range the session learned as it went — which meant the
- * hands, and everything they were holding, slowly breathed up and down with
- * nothing but tracking noise behind it. A camera pointed at a person cannot
- * measure distance; it can only measure how big they look, and inferring one
- * from the other needs a scale nobody supplies. Two steady axes the player
- * controls beat three where the third argues with them.
- */
-const HAND_HOVER = 0.95;
-/** How far a wrist may travel between frames and still be the same hand. */
-const MATCH_RADIUS = 0.22;
+
+export { HAND_HOVER } from "./handAim";
 
 export const HAND_CONNECTIONS: ReadonlyArray<readonly [number, number]> = [
   [0, 1],
@@ -127,7 +138,8 @@ type NormalizedLandmark = { x: number; y: number; z: number };
 
 type HandLandmarkerResult = {
   landmarks: NormalizedLandmark[][];
-  handedness: { categoryName: string }[][];
+  worldLandmarks?: NormalizedLandmark[][];
+  handedness: { categoryName: string; score?: number }[][];
 };
 
 type HandLandmarker = {
@@ -164,48 +176,20 @@ async function loadMediaPipe(): Promise<MediaPipeVision> {
   return load(MEDIAPIPE_MODULE_URL);
 }
 
-type PersistedHand = {
-  smoothed: Vec3[];
-  isGrabbing: boolean;
-  missed: number;
-};
-
-function dist(a: Vec3, b: Vec3): number {
-  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-}
-
 function toVec3(lm: NormalizedLandmark): Vec3 {
   return { x: lm.x, y: lm.y, z: lm.z };
 }
 
-function lerpVec(a: Vec3, b: Vec3, t: number): Vec3 {
-  return {
-    x: a.x + (b.x - a.x) * t,
-    y: a.y + (b.y - a.y) * t,
-    z: a.z + (b.z - a.z) * t,
-  };
-}
-
-function smoothLandmarks(
-  prev: Vec3[] | undefined,
-  next: Vec3[],
-  dt: number,
-): Vec3[] {
-  if (!prev || prev.length !== next.length) return next;
-
-  // One speed for the whole hand, measured at the wrist: smoothing the fingers
-  // at different rates from the palm pulls the hand apart when it moves.
-  const travelled = Math.hypot(next[0].x - prev[0].x, next[0].y - prev[0].y);
-  const moving = Math.min(1, travelled / MOVING_SPAN);
-  const rate = STILL_RATE + (MOVING_RATE - STILL_RATE) * moving;
-  // Frame-rate independent: the same rate settles in the same wall-clock time
-  // whatever the frame took.
-  const t = 1 - Math.exp(-rate * Math.min(dt, 0.1));
-
-  return next.map((point, i) => lerpVec(prev[i], point, t));
+/**
+ * Where a hand is pointing on the screen, in 0..1.
+ * Implementation lives in `screenAim.ts` so menu tests can lock the contract.
+ */
+export function screenFromHand(hand: TrackedHand): { x: number; y: number } {
+  return aimScreenFromHand(hand);
 }
 
 export function landmarkToWorld(lm: Vec3): Vec3 {
+  const worldY = getAimWorldY();
   return {
     // No flip here: the frame was already mirrored before detection. Confirmed
     // against the raw landmark overlay, which lands on the correct side.
@@ -220,85 +204,52 @@ export function landmarkToWorld(lm: Vec3): Vec3 {
 }
 
 /**
- * World-space points used to test whether a hand can reach an object. Palm
- * centre is the main contact; tips catch grabs that land on the fingers.
- * Recognition is unchanged — this is only the interaction probe.
+ * World-space points used to test whether a hand can reach an object.
+ *
+ * Runs through the same `poseHandWorld` pipeline as the glove (size lock,
+ * depth stretch, dorsal turn), so a tip that looks on the spoon is the tip
+ * the game tests. Recognition is unchanged — pinch still uses raw landmarks.
  */
 export function handGrabPoints(landmarks: Vec3[]): Vec3[] {
-  if (landmarks.length < 21) return [];
-  const wrist = landmarks[0];
-  const indexMcp = landmarks[5];
-  const middleMcp = landmarks[9];
-  const pinkyMcp = landmarks[17];
-  const palm = {
-    x: (wrist.x + middleMcp.x) * 0.5,
-    y: (wrist.y + middleMcp.y) * 0.5,
-    z: (wrist.z + middleMcp.z) * 0.5,
-  };
-  return [palm, wrist, indexMcp, middleMcp, pinkyMcp, landmarks[4], landmarks[8]].map(
-    landmarkToWorld,
-  );
+  const posed = poseHandWorld(landmarks, landmarkToWorld);
+  if (posed.length < 21) return [];
+  const aim = aimWorld(landmarks, landmarkToWorld);
+  parkCloudAtAim(posed, posedPalm(posed), aim);
+  const palm = posedPalm(posed);
+  const pick = (i: number) => ({
+    x: posed[i].x,
+    y: posed[i].y,
+    z: posed[i].z,
+  });
+  return [aim, palm, pick(0), pick(5), pick(9), pick(17), pick(4), pick(8)];
 }
 
-function pinchMetrics(landmarks: Vec3[]): { pinchDistance: number; cursor: Vec3 } {
-  const wrist = landmarks[0];
-  const thumbTip = landmarks[4];
-  const indexTip = landmarks[8];
-  const middleMcp = landmarks[9];
-  const handSize = Math.max(dist(wrist, middleMcp), 1e-4);
-  const pinchDistance = dist(thumbTip, indexTip) / handSize;
-  // Carry/collide from the palm, not the pinch midpoint: tips jitter more and
-  // drift off the visual glove once hand size is locked.
-  const palm = {
-    x: (wrist.x + middleMcp.x) * 0.5,
-    y: (wrist.y + middleMcp.y) * 0.5,
-    z: (wrist.z + middleMcp.z) * 0.5,
-  };
-  return { pinchDistance, cursor: landmarkToWorld(palm) };
+function copyPoint(point: { x: number; y: number; z: number }): Vec3 {
+  return { x: point.x, y: point.y, z: point.z };
 }
 
-function applyHysteresis(
-  prevGrabbing: boolean,
-  pinchDistance: number,
-  thresholds: GrabThresholds,
-): boolean {
-  if (prevGrabbing) return pinchDistance < thresholds.exit;
-  return pinchDistance < thresholds.enter;
-}
-
-type MirrorCanvas = {
-  canvas: HTMLCanvasElement;
-  ctx: CanvasRenderingContext2D | null;
-};
-
-/**
- * Flips the camera frame horizontally into a reusable canvas. Falls back to the
- * unflipped video if a 2D context is unavailable, which costs the mirror but
- * keeps tracking alive.
- */
-function mirrorFrame(
-  ref: { current: MirrorCanvas | null },
-  video: HTMLVideoElement,
-  width: number,
-  height: number,
-): HTMLVideoElement | HTMLCanvasElement {
-  if (!width || !height) return video;
-  let mirror = ref.current;
-  if (!mirror) {
-    const canvas = document.createElement("canvas");
-    mirror = { canvas, ctx: canvas.getContext("2d") };
-    ref.current = mirror;
+function worldMetrics(landmarks: Vec3[]): {
+  cursor: Vec3;
+  grabPoints: Vec3[];
+  cloud: Vec3[];
+} {
+  const posed = poseHandWorld(landmarks, landmarkToWorld);
+  if (posed.length < 21) {
+    const aim = aimWorld(landmarks, landmarkToWorld);
+    return { cursor: aim, grabPoints: [aim], cloud: [] };
   }
-  const { canvas, ctx } = mirror;
-  if (!ctx) return video;
-  if (canvas.width !== width || canvas.height !== height) {
-    canvas.width = width;
-    canvas.height = height;
-  }
-  ctx.setTransform(-1, 0, 0, 1, width, 0);
-  ctx.drawImage(video, 0, 0, width, height);
-  return canvas;
+  const aim = aimWorld(landmarks, landmarkToWorld);
+  parkCloudAtAim(posed, posedPalm(posed), aim);
+  const cloud = posed.map(copyPoint);
+  const palm = posedPalm(posed);
+  const pick = (i: number) => copyPoint(posed[i]);
+  return {
+    cursor: { x: aim.x, y: aim.y, z: HAND_HOVER },
+    grabPoints: [aim, palm, pick(0), pick(5), pick(9), pick(17), pick(4), pick(8)],
+    cloud,
+  };
 }
+
 
 function isPermissionDenied(err: unknown): boolean {
   const name = err instanceof DOMException ? err.name : "";
@@ -318,7 +269,7 @@ export function useHandTracking() {
   const runningRef = useRef(false);
   const sessionRef = useRef(0);
   const pointerCleanupRef = useRef<(() => void) | null>(null);
-  const mirrorRef = useRef<MirrorCanvas | null>(null);
+  const detectFrameRef = useRef<DetectFrame | null>(null);
 
   const [status, setStatus] = useState<TrackingStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -326,6 +277,7 @@ export function useHandTracking() {
   const [thresholds, setThresholdsState] = useState<GrabThresholds>({
     ...DEFAULT_THRESHOLDS,
   });
+  const [inputMode, setInputMode] = useState<"camera" | "pointer">("camera");
 
   const setThresholds = useCallback((next: GrabThresholds) => {
     const enter = Math.min(next.enter, next.exit - 0.04);
@@ -354,6 +306,7 @@ export function useHandTracking() {
 
   const start = useCallback(async (stream: MediaStream) => {
     stop();
+    setInputMode("camera");
     runningRef.current = true;
     const session = sessionRef.current;
     streamRef.current = stream;
@@ -377,24 +330,43 @@ export function useHandTracking() {
       const vision = await FilesetResolver.forVisionTasks(WASM_URL);
       if (!stillActive()) return;
 
-      const create = (delegate: "GPU" | "CPU") =>
+      const create = (modelAssetPath: string, delegate: "GPU" | "CPU") =>
         HandLandmarker.createFromOptions(vision, {
           baseOptions: {
-            modelAssetPath: MODEL_URL,
+            modelAssetPath,
             delegate,
           },
           runningMode: "VIDEO",
+          // Look past two so a second body in the frame can be discarded.
           numHands: MAX_HANDS,
-          minHandDetectionConfidence: 0.55,
-          minHandPresenceConfidence: 0.5,
+          // Find the palm even in a lifted-but-still-dim frame.
+          minHandDetectionConfidence: 0.32,
+          // If the bones look unsure, re-run palm detection instead of
+          // dragging last frame's box — that is what turns a blink into
+          // a broken skeleton.
+          minHandPresenceConfidence: 0.55,
           minTrackingConfidence: 0.5,
         });
 
-      let landmarker: HandLandmarker;
-      try {
-        landmarker = await create("GPU");
-      } catch {
-        landmarker = await create("CPU");
+      let landmarker: HandLandmarker | undefined;
+      let lastError: unknown;
+      for (const model of MODEL_CANDIDATES) {
+        try {
+          landmarker = await create(model, "GPU");
+          break;
+        } catch (gpuError) {
+          try {
+            landmarker = await create(model, "CPU");
+            break;
+          } catch (cpuError) {
+            lastError = cpuError ?? gpuError;
+          }
+        }
+      }
+      if (!landmarker) {
+        throw lastError instanceof Error
+          ? lastError
+          : new Error("No hand model could be loaded.");
       }
       if (!stillActive()) {
         landmarker.close();
@@ -405,14 +377,22 @@ export function useHandTracking() {
       setStatus("ready");
 
       let lastHud = 0;
-      // Real elapsed time between detections, so the smoother settles in the
-      // same wall-clock time whatever the frame rate happens to be.
-      let lastTick = performance.now();
+      let lastDetectionAt = -Infinity;
+      let detectedHands: TrackedHand[] = [];
+
+      const publish = (ageSec: number) => {
+        if (ageSec <= 0) {
+          handsRef.current = detectedHands;
+          return;
+        }
+        handsRef.current = detectedHands.map((hand) => ({
+          ...hand,
+          cursor: extrapolateCursor(hand.cursor, hand.motion, ageSec),
+        }));
+      };
 
       const tick = () => {
         const tickNow = performance.now();
-        const dt = Math.min(0.1, (tickNow - lastTick) / 1000);
-        lastTick = tickNow;
         if (!runningRef.current) return;
         const landmarker = landmarkerRef.current;
         const currentVideo = videoRef.current;
@@ -425,10 +405,15 @@ export function useHandTracking() {
         const frameHeight = currentVideo.videoHeight;
         setFrameShape(frameWidth, frameHeight);
 
-        if (currentVideo.currentTime !== lastVideoTimeRef.current) {
+        if (tickNow - lastDetectionAt >= DETECTION_INTERVAL_MS) {
+          const detectionDt =
+            lastDetectionAt === -Infinity
+              ? 1 / 36
+              : Math.min(0.12, (tickNow - lastDetectionAt) / 1000);
+          lastDetectionAt = tickNow;
           lastVideoTimeRef.current = currentVideo.currentTime;
           const timestamp = Math.max(
-            performance.now(),
+            tickNow,
             lastTimestampRef.current + 1,
           );
           lastTimestampRef.current = timestamp;
@@ -438,96 +423,75 @@ export function useHandTracking() {
           // the detector's handedness labels arrive the way it documents them,
           // since it assumes a selfie-mirrored frame to begin with. Everything
           // downstream then works in one consistent space.
-          const mirrored = mirrorFrame(mirrorRef, currentVideo, frameWidth, frameHeight);
+          const framed = prepareDetectFrame(
+            detectFrameRef,
+            currentVideo,
+            frameWidth,
+            frameHeight,
+            tickNow,
+          );
 
-          let result;
           try {
-            result = landmarker.detectForVideo(mirrored, timestamp);
-          } catch {
-            rafRef.current = requestAnimationFrame(tick);
-            return;
-          }
-          const seen = new Set<Handedness>();
-          const nextHands: TrackedHand[] = [];
+            const result = landmarker.detectForVideo(framed, timestamp);
+            const inputMirrored = framed !== currentVideo;
+            const detections = keepGoodHands(
+              result.landmarks.map((landmarks, index) => {
+                const reported = result.handedness[index]?.[0];
+                const image = landmarks.map(toVec3);
+                const world = result.worldLandmarks?.[index]?.map(toVec3);
+                const raw = blendWorldDepth(image, world);
+                return {
+                  raw,
+                  wrist: raw[0],
+                  label: anatomicalHandedness(reported?.categoryName, inputMirrored),
+                  labelScore: reported?.score ?? 0.5,
+                };
+              }),
+            );
 
-          const detections = result.landmarks.map((landmarks, index) => {
-            const category = result.handedness[index]?.[0]?.categoryName;
-            const raw = landmarks.map(toVec3);
-            return {
-              raw,
-              wrist: raw[0],
-              label: (category === "Left" ? "Left" : "Right") as Handedness,
-            };
-          });
-
-          const lastWrist = new Map<Handedness, Vec3>();
-          for (const [handedness, persisted] of persistRef.current) {
-            lastWrist.set(handedness, persisted.smoothed[0]);
-          }
-          const claimed = assignHands(detections, lastWrist, MATCH_RADIUS);
-
-          claimed.forEach((detection, handedness) => {
-            seen.add(handedness);
-
-            const raw = detection.raw;
-            const prev = persistRef.current.get(handedness);
-            const smoothed = smoothLandmarks(prev?.smoothed, raw, dt);
-            const { pinchDistance, cursor } = pinchMetrics(smoothed);
-            const isGrabbing = applyHysteresis(
-              prev?.isGrabbing ?? false,
-              pinchDistance,
+            const drafts = trackFrame(
+              persistRef.current,
+              detections,
+              detectionDt,
               thresholdsRef.current,
             );
-
-            persistRef.current.set(handedness, {
-              smoothed,
-              isGrabbing,
-              missed: 0,
+            const worldY = getAimWorldY();
+            detectedHands = drafts.map((draft) => {
+              const posed = worldMetrics(draft.smoothedLandmarks);
+              const persisted = persistRef.current.get(draft.handedness);
+              const velPerSec = persisted
+                ? {
+                    x: persisted.velocity.x / detectionDt,
+                    y: persisted.velocity.y / detectionDt,
+                    z: persisted.velocity.z / detectionDt,
+                  }
+                : { x: 0, y: 0, z: 0 };
+              return {
+                ...draft,
+                cursor: posed.cursor,
+                grabPoints: posed.grabPoints,
+                posed: posed.cloud,
+                motion: landmarkVelocityToWorld(velPerSec, WORLD_X, worldY),
+              };
             });
 
-            nextHands.push({
-              handedness,
-              landmarks: raw,
-              smoothedLandmarks: smoothed,
-              cursor,
-              pinchDistance,
-              isGrabbing,
-            });
-          });
-
-          for (const [handedness, persisted] of persistRef.current) {
-            if (seen.has(handedness)) continue;
-            persisted.missed += 1;
-            if (persisted.missed >= DROP_AFTER_MISSED_FRAMES) {
-              persistRef.current.delete(handedness);
-              continue;
+            if (tickNow - lastHud >= HUD_INTERVAL_MS) {
+              lastHud = tickNow;
+              setHud(
+                detectedHands.map((hand) => ({
+                  handedness: hand.handedness,
+                  pinchDistance: hand.pinchDistance,
+                  isGrabbing: hand.isGrabbing,
+                })),
+              );
             }
-            const { pinchDistance, cursor } = pinchMetrics(persisted.smoothed);
-            nextHands.push({
-              handedness,
-              landmarks: persisted.smoothed,
-              smoothedLandmarks: persisted.smoothed,
-              cursor,
-              pinchDistance,
-              isGrabbing: persisted.isGrabbing,
-            });
-          }
-
-          handsRef.current = nextHands;
-
-          const now = performance.now();
-          if (now - lastHud >= HUD_INTERVAL_MS) {
-            lastHud = now;
-            setHud(
-              nextHands.map((hand) => ({
-                handedness: hand.handedness,
-                pinchDistance: hand.pinchDistance,
-                isGrabbing: hand.isGrabbing,
-              })),
-            );
+          } catch {
+            // Keep the last good pose; a duplicate video timestamp must not
+            // freeze the published hands for the rest of the session.
           }
         }
 
+        publish((tickNow - lastDetectionAt) / 1000);
         rafRef.current = requestAnimationFrame(tick);
       };
 
@@ -556,6 +520,7 @@ export function useHandTracking() {
 
   const enablePointerFallback = useCallback(() => {
     stop();
+    setInputMode("pointer");
     runningRef.current = true;
     setError(null);
     setStatus("ready");
@@ -572,11 +537,12 @@ export function useHandTracking() {
       handsRef.current = [
         {
           handedness: "Right",
+          tracking: "live",
           landmarks: [],
           smoothedLandmarks: [],
           cursor: {
             x: (event.clientX / window.innerWidth - 0.5) * 7,
-            y: -(event.clientY / window.innerHeight - 0.5) * worldY,
+            y: -(event.clientY / window.innerHeight - 0.5) * getAimWorldY(),
             // The same steady height a tracked hand gets. The wheel used to
             // raise and lower it; nothing does now, because the game works
             // out that height for itself.
@@ -584,6 +550,15 @@ export function useHandTracking() {
           },
           pinchDistance: grabbing ? 0.12 : 0.8,
           isGrabbing: grabbing,
+          grabPoints: [
+            {
+              x: (event.clientX / window.innerWidth - 0.5) * 7,
+              y: -(event.clientY / window.innerHeight - 0.5) * getAimWorldY(),
+              z: HAND_HOVER,
+            },
+          ],
+          identityConfidence: 1,
+          missingForMs: 0,
           roll,
         },
       ];
@@ -601,6 +576,15 @@ export function useHandTracking() {
       roll = Math.max(-1.6, Math.min(1.6, roll + event.deltaY * 0.004));
       publish(last);
     };
+
+    // A hand already, at the centre, so the sync screen can lock without
+    // waiting for the first move. A mouse that has not moved yet is still
+    // a mouse.
+    publish({
+      clientX: window.innerWidth * 0.5,
+      clientY: window.innerHeight * 0.5,
+      buttons: 0,
+    } as PointerEvent);
 
     window.addEventListener("pointermove", sync);
     window.addEventListener("pointerdown", sync);
@@ -630,5 +614,6 @@ export function useHandTracking() {
     setThresholds,
     start,
     enablePointerFallback,
+    inputMode,
   };
 }

@@ -9,7 +9,8 @@ import {
   landmarkToWorld,
   type TrackedHand,
 } from "@/hooks/useHandTracking";
-import { lockSpan } from "@/hooks/palmFrame";
+import { poseCloud } from "@/hooks/palmFrame";
+import { poseOptions } from "@/hooks/handPose";
 
 const JOINTS = 21;
 const MAX_HANDS = 2;
@@ -40,11 +41,10 @@ function createScratch() {
  * the two can be read off directly: if the dots are in the right places and
  * the glove is not, the problem is the retargeting rather than the tracking.
  *
- * They are drawn at the glove's locked span rather than at their own apparent
- * size. That is the one piece of retargeting done here, and without it this
- * view could not do its job: a hand near the camera reports a cloud far larger
- * than the fixed-size glove, so the two never line up and every disagreement
- * looks enormous whether or not anything is wrong.
+ * They run the same `poseCloud` as the hand — locked span, depth stretch,
+ * dorsal turn — so a disagreement is a real one. Skipping any of those left
+ * the dots on the palm while the hand showed the back, and the one view
+ * meant to tell tracking and drawing apart could not line up with either.
  */
 export function LandmarkDots({
   handsRef,
@@ -73,12 +73,18 @@ export function LandmarkDots({
     let dot = 0;
     let bar = 0;
     for (const hand of hands) {
-      for (let i = 0; i < JOINTS; i++) {
-        const point = landmarkToWorld(hand.smoothedLandmarks[i]);
-        s.world[i].set(point.x, point.y, point.z);
+      const posed = hand.posed;
+      if (posed && posed.length === JOINTS) {
+        for (let i = 0; i < JOINTS; i++) {
+          s.world[i].set(posed[i].x, posed[i].y, posed[i].z);
+        }
+      } else {
+        for (let i = 0; i < JOINTS; i++) {
+          const point = landmarkToWorld(hand.smoothedLandmarks[i]);
+          s.world[i].set(point.x, point.y, point.z);
+        }
+        poseCloud(s.world, s.wrist, poseOptions());
       }
-      // The same rescaling the glove does, so the two are comparable.
-      lockSpan(s.world, s.wrist);
       for (let i = 0; i < JOINTS; i++) {
         s.matrix.compose(s.world[i], s.idle, s.unit);
         dots.setMatrixAt(dot++, s.matrix);

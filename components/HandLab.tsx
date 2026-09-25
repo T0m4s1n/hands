@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { EnableCameraButton } from "@/components/EnableCameraButton";
-import { handTuning, handView } from "@/components/RobotHand";
+import { handTuning, handView } from "@/hooks/handPose";
 import { Sheet } from "@/components/ui";
 import { useHandTracking, type TrackedHand } from "@/hooks/useHandTracking";
 
@@ -214,10 +214,19 @@ export function HandLab() {
 
           <div className="border-t border-separator pt-3">
             <p className="t-caption text-label-3">
-              La mano se arma directamente sobre los puntos, así que la
-              lateralidad sale sola: no hay modelo que elegir ni cara que
-              corregir.
+              Por defecto la mano mira como la cámara (palma hacia ti). Activa
+              el dorso si quieres la vista de mesa: media vuelta sobre el eje de
+              la mano, no un espejo — espejar convertiría izquierda en derecha.
             </p>
+            <Toggle
+              checked={handView.faceDorsal}
+              onChange={(next) => {
+                handView.faceDorsal = next;
+                bump((value) => value + 1);
+              }}
+            >
+              Dorso hacia el jugador (mesa)
+            </Toggle>
             <Toggle
               checked={handView.showPalm}
               onChange={(next) => {

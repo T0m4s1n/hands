@@ -16,6 +16,9 @@ import {
   palmFrame,
   lockSpan,
   deepen,
+  turnOver,
+  poseCloud,
+  keepFacing,
   LOCKED_SPAN,
 } from "./palmFrame.ts";
 
@@ -156,6 +159,20 @@ test("lockSpan leaves a degenerate cloud alone rather than exploding it", () => 
   }
 });
 
+test("lockSpan does not magnify a collapsed tracking frame", () => {
+  const points = Array.from({ length: 21 }, (_, index) =>
+    v(index * 0.002, index * 0.001, 0),
+  );
+  const before = points.map((point) => point.clone());
+  lockSpan(points, new Vector3());
+  for (let i = 0; i < points.length; i++) {
+    assert.ok(
+      points[i].distanceTo(before[i]) < 1e-9,
+      "collapsed landmarks must wait for the next stable frame",
+    );
+  }
+});
+
 test("deepen scales depth about the wrist and leaves the wrist alone", () => {
   const points = [v(0, 0, 2), v(1, 1, 2.5), v(2, 2, 1)];
   deepen(points, 3);
@@ -190,4 +207,113 @@ test("deepen separates what was overlapping, which is the whole point", () => {
   deepen(points, 4);
   const after = Math.abs(points[1].z - points[2].z);
   assert.ok(after > before * 3.9, `${before} should have opened out, got ${after}`);
+});
+
+test("turnOver shows the other side without changing which hand it is", () => {
+  // A right hand: thumb out to -x, fingers up, palm toward +z.
+  const points = [
+    v(0, 0, 0), // wrist
+    ...Array.from({ length: 8 }, (_, i) => v(-0.3 - i * 0.05, 0.3, 0.1)),
+    v(0, 1, 0), // 9, middle knuckle
+    ...Array.from({ length: 11 }, (_, i) => v(0.2 + i * 0.03, 0.9, 0.15)),
+  ];
+  const before = points.map((p) => p.clone());
+  turnOver(points, new Vector3());
+
+  assert.ok(points[0].equals(before[0]), "the wrist is the pivot, it stays");
+  assert.ok(
+    Math.abs(points[9].distanceTo(before[9])) < 1e-9,
+    "a point on the axis itself does not move",
+  );
+  // The thumb crosses to the other side, which is what turning a hand does.
+  assert.ok(before[1].x < 0 && points[1].x > 0, "the thumb should swap sides");
+  // Depth flips with it: what faced the camera now faces away.
+  assert.ok(before[1].z > 0 && points[1].z < 0);
+});
+
+test("turnOver is a rotation, not a mirror: it preserves chirality", () => {
+  // The signed volume of three edges off the wrist is the handedness of the
+  // hand. A rotation keeps its sign; a reflection would flip it, which is how
+  // a left hand becomes a right one.
+  const points = [
+    v(0, 0, 0),
+    ...Array.from({ length: 4 }, (_, i) => v(-0.4, 0.2 + i * 0.1, 0.2)),
+    v(-0.3, 0.8, 0),
+    ...Array.from({ length: 3 }, () => v(-0.3, 1.1, 0)),
+    v(0, 1, 0),
+    ...Array.from({ length: 11 }, () => v(0.4, 0.9, -0.1)),
+  ];
+  const volume = (p: Vector3[]) =>
+    Math.sign(
+      p[5]
+        .clone()
+        .sub(p[0])
+        .cross(p[17].clone().sub(p[0]))
+        .dot(p[9].clone().sub(p[0])),
+    );
+  const before = volume(points);
+  turnOver(points, new Vector3());
+  assert.equal(volume(points), before, "chirality must survive the turn");
+});
+
+test("poseCloud is lockSpan, then deepen, then turnOver", () => {
+  const manual = [
+    v(0, 0, 0),
+    ...Array.from({ length: 8 }, (_, i) => v(-0.4, 0.3 + i * 0.05, 0.2)),
+    v(0, 1.2, 0.1),
+    ...Array.from({ length: 11 }, (_, i) => v(0.3, 0.8, 0.15 + i * 0.01)),
+  ];
+  const posed = manual.map((p) => p.clone());
+  const scratch = new Vector3();
+  lockSpan(manual, scratch);
+  deepen(manual, 2.2);
+  turnOver(manual, scratch);
+  poseCloud(posed, scratch, { depthScale: 2.2, faceDorsal: true });
+  for (let i = 0; i < manual.length; i++) {
+    assert.ok(
+      posed[i].distanceTo(manual[i]) < 1e-9,
+      `point ${i} took a different path`,
+    );
+  }
+});
+
+test("keepFacing rejects a 180 flip and accepts a real turn", () => {
+  const frame = frameOf(FLAT, 1);
+  const previous = frame.normal.clone();
+
+  // Same facing: stored as-is.
+  keepFacing(frame, previous);
+  assert.ok(previous.distanceTo(frame.normal) < 1e-9);
+
+  // A sudden invert is a collapsed-span flip, not a turn of the hand.
+  frame.normal.negate();
+  frame.side.negate();
+  keepFacing(frame, previous);
+  assert.ok(
+    previous.dot(frame.normal) > 0.9,
+    "an inverted normal should be put back",
+  );
+
+  // A real pitch is a small turn and has to stay.
+  const pitched = frameOf(PITCHED, 1);
+  const before = pitched.normal.clone();
+  keepFacing(pitched, previous);
+  assert.ok(
+    pitched.normal.distanceTo(before) < 1e-9,
+    "a genuine tilt must not be undone",
+  );
+});
+
+test("turnOver twice is where it started", () => {
+  const points = Array.from({ length: 21 }, (_, i) =>
+    v(Math.sin(i) * 0.4, i * 0.05, Math.cos(i) * 0.3),
+  );
+  points[0].set(0, 0, 0);
+  points[9].set(0.1, 1, 0.05);
+  const before = points.map((p) => p.clone());
+  turnOver(points, new Vector3());
+  turnOver(points, new Vector3());
+  for (let i = 0; i < points.length; i++) {
+    assert.ok(points[i].distanceTo(before[i]) < 1e-9, `point ${i} drifted`);
+  }
 });

@@ -1,11 +1,17 @@
 "use client";
 
-import { Suspense, useEffect, useState, type RefObject } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { Environment, Lightformer, RoundedBox } from "@react-three/drei";
-import { NoToneMapping, Vector3 } from "three";
+import {
+  BackSide,
+  NoToneMapping,
+  ShaderMaterial,
+  Vector3,
+} from "three";
 import { HandGloves } from "@/components/RobotHand";
 import { CoffeeGame, type StageStatus } from "@/components/CoffeeGame";
+import { emptyGloveHold } from "@/components/coffee/gloveGrip";
 import { Cafe, FLOOR_Z } from "@/components/coffee/cafe";
 import { GradePass } from "@/components/coffee/grade";
 import type { Recipe } from "@/components/coffee/recipes";
@@ -79,110 +85,137 @@ function GraphicsGuard({ onLost }: { onLost: (lost: boolean) => void }) {
   return null;
 }
 
+/**
+ * Soft café sky — wine nadir, warm amber horizon, deep roast zenith.
+ * Replaces the flat `#1c050a` void so the room has air behind the fog.
+ */
+function CafeAtmosphere() {
+  const material = useMemo(
+    () =>
+      new ShaderMaterial({
+        side: BackSide,
+        depthWrite: false,
+        fog: false,
+        toneMapped: false,
+        vertexShader: /* glsl */ `
+          varying vec3 vDir;
+          void main() {
+            vec4 world = modelMatrix * vec4(position, 1.0);
+            vDir = normalize(world.xyz);
+            gl_Position = projectionMatrix * viewMatrix * world;
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          varying vec3 vDir;
+          void main() {
+            // Z is up in this scene.
+            float h = clamp(vDir.z * 0.5 + 0.5, 0.0, 1.0);
+            vec3 floorTone = vec3(0.07, 0.015, 0.03);
+            vec3 horizon = vec3(0.42, 0.16, 0.08);
+            vec3 ceiling = vec3(0.045, 0.012, 0.028);
+            vec3 colour = mix(floorTone, horizon, smoothstep(0.28, 0.52, h));
+            colour = mix(colour, ceiling, smoothstep(0.55, 0.92, h));
+            // Warm bloom toward the stage front (+Y is behind the crowd).
+            float stage = pow(clamp(-vDir.y * 0.5 + 0.5, 0.0, 1.0), 1.6);
+            colour += vec3(0.12, 0.04, 0.015) * stage * 0.35;
+            gl_FragColor = vec4(colour, 1.0);
+          }
+        `,
+      }),
+    [],
+  );
+
+  useEffect(() => () => material.dispose(), [material]);
+
+  return (
+    <mesh scale={90} frustumCulled={false} renderOrder={-10}>
+      <sphereGeometry args={[1, 48, 32]} />
+      <primitive object={material} attach="material" />
+    </mesh>
+  );
+}
+
 function SceneContents({
   recipe,
   handsRef,
   onStatus,
   round,
   running,
+  showHands,
+  showGuides,
 }: {
   recipe: Recipe;
   handsRef: RefObject<TrackedHand[]>;
   onStatus: (status: StageStatus) => void;
   round: number;
   running: boolean;
+  showHands: boolean;
+  showGuides: boolean;
 }) {
+  const holdRef = useRef(emptyGloveHold());
   return (
     <>
       <FitToWindow />
-      {/* Warm shadow rather than black: the room should look dim, not switched
-          off, and a pure black background is what made it read as a void. */}
-      <color attach="background" args={["#1c050a"]} />
-      {/* Close and hard: the back of the hall should be a suggestion, not an
-          inventory. Everything past the second row dissolves, which is both
-          what a dark venue looks like and what stops the eye counting heads. */}
-      <fog attach="fog" args={["#1c050a", 13, 27]} />
+      <CafeAtmosphere />
+      {/* Fog matches the warm mid of the sky so the crowd dissolves into air,
+          not into a hard black plate. */}
+      <fog attach="fog" args={["#2a0c12", 12, 32]} />
 
-      {/*
-        The light rig, in the order it matters.
+      <hemisphereLight args={["#8a4a52", "#1a080c", 0.38]} />
+      <ambientLight intensity={0.32} color="#e8cfc0" />
 
-        Daylight comes in cool through the windows behind the bar, the pendants
-        over the counter are warm and close, and a low bounce stands in for
-        light coming back off the floor. Two colour temperatures pulling against
-        each other is most of why a room reads as a room: lit from one warm
-        source only, everything turns the same shade of orange and goes flat.
-      */}
-      <hemisphereLight args={["#6b3a44", "#1a0509", 0.24]} />
-      <ambientLight intensity={0.22} color="#d8b9a8" />
-
-      {/*
-        A hall with the lights down and one rig over the counter.
-
-        Everything that used to light the room is gone: the daylight through
-        the windows, the bounce off the floor, the fill from the player's side.
-        What is left is the stage — which is the whole point of a stage — plus
-        just enough cold spill at the back to keep the audience from being a
-        black rectangle.
-      */}
       <spotLight
         position={[0, 1.6, 7.2]}
         target-position={[0, 0.4, 0]}
         angle={0.72}
         penumbra={0.55}
-        intensity={190}
+        intensity={200}
         distance={26}
         decay={2}
-        color="#ffcf8a"
+        color="#ffd49a"
         castShadow
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
+        shadow-mapSize-width={1536}
+        shadow-mapSize-height={1536}
         shadow-camera-near={1}
         shadow-camera-far={26}
-        shadow-bias={-0.0006}
-        shadow-normalBias={0.02}
+        shadow-bias={-0.0004}
+        shadow-normalBias={0.025}
       />
-      {/* Two lower washes across the counter, so the props are not lit from a
-          single point and nothing on the bar falls into its own shadow. */}
       <pointLight
         position={[-5.4, -1.2, 3.4]}
-        intensity={34}
+        intensity={42}
         distance={14}
         decay={2}
         color="#f5990a"
       />
       <pointLight
         position={[5.4, -1.2, 3.4]}
-        intensity={34}
+        intensity={42}
         distance={14}
         decay={2}
         color="#f5990a"
       />
-
-      {/* The audience, lit from behind and above by the hall's own dim glow.
-          Cold, so the warm stage reads as the warm thing in the room. */}
+      {/* Soft fill from the player's side so gloves read sharp and round. */}
       <directionalLight
-        position={[0, 26, 16]}
-        intensity={1.15}
+        position={[0, -8, 6]}
+        intensity={0.85}
+        color="#ffe2c4"
+      />
+      <directionalLight
+        position={[0, 22, 12]}
+        intensity={0.55}
         color="#a86a78"
       />
-      {/* And a touch from the stage side, so the front rows catch its spill
-          and the crowd has depth instead of being one flat cut-out. */}
       <directionalLight
         position={[0, -6, 9]}
-        intensity={0.45}
+        intensity={0.35}
         color="#f5990a"
       />
 
-      {/*
-        And an environment to reflect. Metal and glaze need something to mirror
-        before they look like metal and glaze — with no environment at all the
-        kit models read as painted plastic — and a handful of glowing rectangles
-        gives them that for the cost of one small cube render.
-      */}
-      <Environment resolution={128} frames={1}>
+      <Environment resolution={256} frames={1}>
         <Lightformer
           form="rect"
-          intensity={4}
+          intensity={5}
           color="#ffdcae"
           position={[0, 2, 7]}
           rotation={[-Math.PI / 2, 0, 0]}
@@ -190,7 +223,7 @@ function SceneContents({
         />
         <Lightformer
           form="rect"
-          intensity={3}
+          intensity={3.4}
           color="#cfe2ff"
           position={[-7, 9, 6]}
           rotation={[0, Math.PI / 2.4, 0]}
@@ -198,7 +231,7 @@ function SceneContents({
         />
         <Lightformer
           form="rect"
-          intensity={1.6}
+          intensity={2}
           color="#ffb877"
           position={[6, -3, 3]}
           rotation={[0, -Math.PI / 3, 0]}
@@ -206,7 +239,7 @@ function SceneContents({
         />
         <Lightformer
           form="ring"
-          intensity={2.4}
+          intensity={2.8}
           color="#fff2dd"
           position={[2, 3, 6]}
           scale={3}
@@ -225,18 +258,18 @@ function SceneContents({
         receiveShadow
       >
         <meshStandardMaterial
-          color="#7b4a33"
-          roughness={0.6}
-          metalness={0.04}
+          color="#8a5538"
+          roughness={0.55}
+          metalness={0.05}
         />
       </RoundedBox>
       <mesh position={[0, -2.9, (TABLE_Z + FLOOR_Z) / 2]} receiveShadow>
         <boxGeometry args={[13.4, 0.5, TABLE_Z - FLOOR_Z]} />
-        <meshStandardMaterial color="#522a1d" roughness={0.78} />
+        <meshStandardMaterial color="#5c3224" roughness={0.72} />
       </mesh>
       <mesh position={[0, -3.28, TABLE_Z + 0.12]} rotation={[0, Math.PI / 2, 0]}>
-        <cylinderGeometry args={[0.07, 0.07, 13.4, 12]} />
-        <meshStandardMaterial color="#f5990a" roughness={0.32} metalness={0.8} />
+        <cylinderGeometry args={[0.07, 0.07, 13.4, 16]} />
+        <meshStandardMaterial color="#f5990a" roughness={0.28} metalness={0.85} />
       </mesh>
 
       {/* Bar mat: keeps the play area readable against the wood */}
@@ -247,19 +280,21 @@ function SceneContents({
         position={[0, 0, TABLE_Z + 0.24]}
         receiveShadow
       >
-        <meshStandardMaterial color="#45291c" roughness={0.9} metalness={0.02} />
+        <meshStandardMaterial color="#3a2218" roughness={0.88} metalness={0.02} />
       </RoundedBox>
 
       <CoffeeGame
         recipe={recipe}
         handsRef={handsRef}
+        holdRef={holdRef}
         onStatus={onStatus}
         round={round}
         running={running}
+        showGuides={showGuides}
       />
 
       <Suspense fallback={null}>
-        <HandGloves handsRef={handsRef} />
+        <HandGloves handsRef={handsRef} holdRef={holdRef} active={showHands} />
       </Suspense>
 
       {/* Last, because it takes over the render loop. */}
@@ -274,12 +309,16 @@ export function HandTrackedScene({
   onStatus,
   round,
   running,
+  showHands,
+  showGuides = true,
 }: {
   recipe: Recipe;
   handsRef: RefObject<TrackedHand[]>;
   onStatus: (status: StageStatus) => void;
   round: number;
   running: boolean;
+  showHands: boolean;
+  showGuides?: boolean;
 }) {
   const [lost, setLost] = useState(false);
 
@@ -287,7 +326,10 @@ export function HandTrackedScene({
     <>
       <Canvas
         shadows="percentage"
-        dpr={[1, 1.75]}
+        // Native resolution on 1× displays; Retina remains sharp, while the
+        // post pass caps total shaded pixels. Forcing 1.5× on every monitor
+        // spent 2.25× the fragments without adding visible detail.
+        dpr={[1, 2]}
         // A three-quarter view, sat low enough to see the room behind the bar.
         // The angle is a compromise and worth naming: flatter shows more café
         // but squashes the axis the hands move along, so reaching stops mapping
@@ -316,6 +358,8 @@ export function HandTrackedScene({
           onStatus={onStatus}
           round={round}
           running={running}
+          showHands={showHands}
+          showGuides={showGuides}
         />
       </Canvas>
       {lost && (

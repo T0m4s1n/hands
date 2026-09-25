@@ -44,7 +44,15 @@ placeScore(distance, radius) = max(0, 1 - distance / max(radius, 1e-4))
 
 grade(s) = ≥0.9 "Excelente" | ≥0.75 "Muy bueno" | ≥0.6 "Correcto"
          | ≥0.4 "Mejorable" | resto "Para tirar"
+
+stars(s) = 5 / 4 / 3 / 2 / 1 / 0     los mismos umbrales que grade()
 ```
+
+`pitch` es la frase larga del menú. `recipePortrait(id)` apunta a
+`/cafes/{id}.png` (portada). `recipeHero(id)` apunta a
+`/cafes/{id}-hero.jpg` (carta del juego). `stars` y `grade` no se
+contradicen: un «Muy bueno» son
+cuatro estrellas.
 
 El ancho del desvanecido es el ancho de la propia banda × 0,9: una ventana
 aceptable más ancha perdona también más fuera de ella.

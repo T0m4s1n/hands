@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, type RefObject } from "react";
 import { useGLTF } from "@react-three/drei";
 import type { Group, Material, Mesh } from "three";
 import {
@@ -14,6 +14,9 @@ import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js
 import type { Vessel } from "./liquid";
 import type { PropKind } from "./recipes";
 import type { Solid } from "./solid";
+import { Beans } from "./effects";
+import { CARGO, type CargoSpec } from "./cargo";
+import { mouthOf } from "./mouth";
 
 /**
  * The coffee bar, assembled from Kenney's CC0 kits rather than modelled here.
@@ -37,6 +40,8 @@ type KitEntry = {
   size: number;
   /** Turn about the table's up axis, for pieces modelled facing elsewhere. */
   yaw?: number;
+  /** Tilt toward the table, so a mallet can press instead of standing upright. */
+  pitch?: number;
   /** Lift off the tabletop, for pieces meant to hover rather than rest. */
   lift?: number;
   /** Push away from the camera, for tall pieces that would block the target. */
@@ -49,6 +54,13 @@ type KitEntry = {
    * real frames and buys nothing at this distance.
    */
   shadows?: boolean;
+  /**
+   * Loose contents (beans, grounds) that sit inside the bowl — not at the
+   * group's origin. Offset is in the yaw group's local frame (game units),
+   * the same space as the fitted mesh, so yaw turns both together. For a
+   * spatula, `seat: "wide-end"` measures the blade instead of guessing a sign.
+   */
+  cargo?: CargoSpec;
 };
 
 /**
@@ -112,6 +124,7 @@ export const KIT: Record<PropKind, PropEntry | null> = {
     size: 1.6,
     yaw: Math.PI,
     solid: { shape: { kind: "slab", halfLong: 0.8, halfShort: 0.21, height: 0.1 }, mass: 0.6, friction: 0.4 },
+    cargo: CARGO.scoop,
   },
   kettle: {
     file: "pot.glb",
@@ -130,6 +143,7 @@ export const KIT: Record<PropKind, PropEntry | null> = {
     file: "bowl.glb",
     size: 1.6,
     solid: { shape: { kind: "open", radius: 0.68, height: 0.56, rim: 0.52, floor: 0.12 }, mass: 0.7, friction: 0.5 },
+    cargo: CARGO.filter,
   },
   brewer: {
     file: "glass.glb",
@@ -142,12 +156,14 @@ export const KIT: Record<PropKind, PropEntry | null> = {
     size: 2.3,
     yaw: Math.PI * 0.5,
     solid: { shape: { kind: "slab", halfLong: 1.15, halfShort: 0.62, height: 0.27 }, mass: 2.6, friction: 0.6 },
+    cargo: CARGO.portafilter,
   },
   tamper: {
     file: "meat-tenderizer.glb",
-    size: 1.5,
+    size: 1.35,
     yaw: Math.PI * 0.5,
-    solid: { shape: { kind: "slab", halfLong: 0.75, halfShort: 0.31, height: 0.3 }, mass: 2.2, friction: 0.5 },
+    pitch: 1.15,
+    solid: { shape: { kind: "slab", halfLong: 0.7, halfShort: 0.28, height: 0.22 }, mass: 2.2, friction: 0.5 },
   },
   // The machine ships with a mug already under its spout; the game puts its own
   // cup there, so the bundled one goes. Set back so its body does not stand in
@@ -270,11 +286,15 @@ export function KitModel({
   dir,
   size: target,
   yaw = 0,
+  pitch = 0,
   lift = 0,
   back = 0,
   hide,
   shadows = true,
-}: KitEntry) {
+  cargo,
+  showCargo = true,
+  shake,
+}: KitEntry & { showCargo?: boolean; shake?: RefObject<number> }) {
   const { scene } = useGLTF(url({ file, dir }));
 
   // One clone per instance: the same cup shows up in several stages, and they
@@ -309,23 +329,62 @@ export function KitModel({
       console.warn(`[kit] ${file} has no measurable geometry; left unscaled`);
     }
 
+    const scale = usable ? target / longest : 1;
+    const offset = [-centre.x, -centre.y, -box.min.z] as const;
+
+    let mouth: [number, number, number] = [offset[0] * scale, offset[1] * scale, 0.1];
+    if (cargo?.seat === "wide-end") {
+      // Game-unit verts in the yaw group's local frame (scale on, yaw off).
+      // Cargo is a sibling of the scale group, so this is where a heap must sit.
+      const verts: { x: number; y: number; z: number }[] = [];
+      const vertex = new Vector3();
+      model.traverse((child) => {
+        const mesh = child as Mesh;
+        if (!mesh.isMesh || !mesh.geometry?.attributes.position) return;
+        const attr = mesh.geometry.attributes.position;
+        for (let i = 0; i < attr.count; i++) {
+          vertex.fromBufferAttribute(attr, i);
+          mesh.localToWorld(vertex);
+          verts.push({
+            x: (vertex.x + offset[0]) * scale,
+            y: (vertex.y + offset[1]) * scale,
+            z: (vertex.z + offset[2]) * scale,
+          });
+        }
+      });
+      mouth = mouthOf(verts, 0.08);
+    }
+
     return {
       model,
-      scale: usable ? target / longest : 1,
+      scale,
       // In model units, because the scale is applied by the group above these.
-      offset: [-centre.x, -centre.y, -box.min.z] as const,
+      offset,
+      mouth,
     };
-  }, [scene, file, target, hide, shadows]);
+  }, [scene, file, target, hide, shadows, cargo?.seat]);
 
+  // Cargo rides the yaw so it stays in the bowl when the piece is turned.
+  // It stays outside the fit-scale group so offsets are in game units.
   return (
-    <group
-      position={[0, back, lift]}
-      rotation={[0, 0, yaw]}
-      scale={fitted.scale}
-    >
-      <group position={fitted.offset as unknown as [number, number, number]}>
-        <primitive object={fitted.model} />
+    <group position={[0, back, lift]} rotation={[pitch, 0, yaw]}>
+      <group scale={fitted.scale}>
+        <group position={fitted.offset as unknown as [number, number, number]}>
+          <primitive object={fitted.model} />
+        </group>
       </group>
+      {cargo && showCargo && (
+        <Beans
+          key={(cargo.seat === "wide-end" ? fitted.mouth : cargo.offset).join(",")}
+          position={cargo.seat === "wide-end" ? fitted.mouth : cargo.offset}
+          radius={cargo.radius}
+          count={cargo.count ?? 12}
+          colour={cargo.colour}
+          grain={cargo.grain}
+          heap
+          shake={shake}
+        />
+      )}
     </group>
   );
 }
@@ -343,8 +402,140 @@ export const PIECES = Object.entries(KIT)
   .sort((a, b) => a.kind.localeCompare(b.kind));
 
 /** The piece a stage names, or nothing when that role has no model. */
-export function KitPiece({ kind }: { kind: PropKind }) {
+export function KitPiece({
+  kind,
+  showCargo = true,
+  shake,
+}: {
+  kind: PropKind;
+  showCargo?: boolean;
+  shake?: RefObject<number>;
+}) {
   const entry = KIT[kind];
   if (!entry) return null;
-  return <KitModel {...entry} />;
+  return (
+    <>
+      <KitModel {...entry} showCargo={showCargo} shake={shake} />
+      <RoleDetails
+        kind={kind}
+        yaw={entry.yaw ?? 0}
+        back={entry.back ?? 0}
+        lift={entry.lift ?? 0}
+      />
+    </>
+  );
+}
+
+/**
+ * Small semantic details over the CC0 base meshes. They make reused kitchen
+ * kit pieces read as their gameplay role (spout, group head, dripper collar)
+ * without replacing the measured/collision-tested body underneath.
+ */
+function RoleDetails({
+  kind,
+  yaw,
+  back,
+  lift,
+}: {
+  kind: PropKind;
+  yaw: number;
+  back: number;
+  lift: number;
+}) {
+  const metal = (
+    <meshStandardMaterial color="#b9aaa0" metalness={0.72} roughness={0.28} />
+  );
+  const brass = (
+    <meshStandardMaterial color="#c88932" metalness={0.68} roughness={0.3} />
+  );
+
+  return (
+    <group position={[0, back, lift]} rotation={[0, 0, yaw]}>
+      {kind === "kettle" && (
+        <>
+          <mesh
+            position={[0.67, 0, 0.48]}
+            rotation={[Math.PI / 2, 0, -Math.PI / 2]}
+            castShadow
+          >
+            <coneGeometry args={[0.17, 0.78, 20]} />
+            {metal}
+          </mesh>
+          <mesh
+            position={[-0.08, 0.05, 0.69]}
+            rotation={[Math.PI / 2, 0, 0]}
+            castShadow
+          >
+            <torusGeometry args={[0.54, 0.07, 12, 36, Math.PI]} />
+            <meshStandardMaterial
+              color="#4a281b"
+              roughness={0.68}
+              metalness={0.08}
+            />
+          </mesh>
+          <mesh position={[0, 0, 0.83]} castShadow>
+            <cylinderGeometry args={[0.1, 0.14, 0.13, 20]} />
+            {brass}
+          </mesh>
+        </>
+      )}
+
+      {kind === "brewer" && (
+        <>
+          <mesh position={[0, 0, 0.9]} castShadow>
+            <cylinderGeometry args={[0.44, 0.34, 0.16, 32]} />
+            <meshStandardMaterial
+              color="#6c4330"
+              roughness={0.48}
+              metalness={0.08}
+            />
+          </mesh>
+          <mesh position={[0, 0, 1.06]} castShadow>
+            <coneGeometry args={[0.47, 0.34, 32, 1, true]} />
+            <meshStandardMaterial
+              color="#b66b38"
+              roughness={0.58}
+              side={2}
+            />
+          </mesh>
+          {/* Paper filter seated in the cone — this is the "filtro", not a pan. */}
+          <mesh position={[0, 0, 1.04]}>
+            <coneGeometry args={[0.38, 0.3, 28, 1, true]} />
+            <meshStandardMaterial
+              color="#f3e2c4"
+              roughness={0.86}
+              side={2}
+            />
+          </mesh>
+        </>
+      )}
+
+      {kind === "machine" && (
+        <>
+          {/* Group heads on the camera side of the machine (yaw π). */}
+          {[0.22, -0.22].map((x) => (
+            <mesh
+              key={x}
+              position={[x, 1.33, 1.16]}
+              rotation={[Math.PI / 2, 0, 0]}
+            >
+              <cylinderGeometry args={[0.08, 0.08, 0.06, 18]} />
+              {x > 0 ? brass : metal}
+            </mesh>
+          ))}
+          <mesh position={[0, 1.38, 0.78]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.05, 0.05, 0.32, 16]} />
+            {metal}
+          </mesh>
+        </>
+      )}
+
+      {kind === "filter" && (
+        <mesh position={[0, 0, 0.42]}>
+          <torusGeometry args={[0.53, 0.035, 10, 36]} />
+          <meshStandardMaterial color="#d8c3a5" roughness={0.76} />
+        </mesh>
+      )}
+    </group>
+  );
 }

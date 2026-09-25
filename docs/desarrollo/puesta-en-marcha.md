@@ -43,7 +43,8 @@ npm run build
 
 ## Sin cámara
 
-En la pantalla de permiso, «Continuar con el ratón»:
+En `/jugar` la cámara se pide sola. Si el navegador no deja, la taza llora y
+salen, en fila, «Continuar con el ratón» y «Aceptar cámara». Con el ratón:
 
 - **Mantener pulsado** el botón izquierdo = pellizcar.
 - **Mover** el ratón = mover la mano.

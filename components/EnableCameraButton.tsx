@@ -2,65 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui";
+import {
+  describeCameraError,
+  keepFirstStream,
+  startCameraRequests,
+} from "@/hooks/requestCamera";
 
 type EnableCameraButtonProps = {
   onStream: (stream: MediaStream) => void;
   onPointerFallback: () => void;
 };
-
-function errorName(err: unknown): string {
-  return err instanceof DOMException || err instanceof Error ? err.name : "";
-}
-
-function describeCameraError(err: unknown, cameras: MediaDeviceInfo[]): string {
-  const name = errorName(err);
-  const listed = cameras.length
-    ? cameras
-        .map((camera, index) => camera.label || camera.deviceId || `camera ${index + 1}`)
-        .join(", ")
-    : "none detected";
-
-  if (name === "NotAllowedError" || name === "PermissionDeniedError") {
-    return "Camera access is blocked for this site. Open the site permissions icon in your browser's address bar, set Camera to Allow, then try again.";
-  }
-  if (name === "NotReadableError" || name === "AbortError") {
-    return "The camera is in use by another app. Close any other video app (Teams, Zoom, Discord, Camera) and try again.";
-  }
-  if (name === "NotFoundError" || name === "OverconstrainedError") {
-    return `No camera was found (${listed}). Confirm a webcam is connected and that your OS allows browsers to access it — on Windows, check Settings → Privacy & security → Camera.`;
-  }
-  return err instanceof Error ? err.message : String(err);
-}
-
-function startCameraRequests(media: MediaDevices, deviceIds: string[]): Promise<MediaStream>[] {
-  const requests: Promise<MediaStream>[] = [
-    media.getUserMedia({ video: true }),
-    media.getUserMedia({ video: {} }),
-  ];
-  for (const deviceId of deviceIds) {
-    if (!deviceId) continue;
-    requests.push(
-      media.getUserMedia({
-        video: { deviceId: { ideal: deviceId } },
-      }),
-    );
-  }
-  return requests;
-}
-
-function keepFirstStream(requests: Promise<MediaStream>[]): Promise<MediaStream> {
-  return Promise.any(requests).then((stream) => {
-    for (const request of requests) {
-      void request
-        .then((other) => {
-          if (other !== stream) other.getTracks().forEach((track) => track.stop());
-        })
-        .catch(() => undefined);
-    }
-    stream.getAudioTracks().forEach((track) => track.stop());
-    return stream;
-  });
-}
 
 export function EnableCameraButton({
   onStream,
