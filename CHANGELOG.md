@@ -11,6 +11,57 @@ sirve de nada dentro de seis meses.
 
 ## Sin publicar
 
+### El martillo del espresso golpea de verdad
+
+- El prensado **ya no es un dip de cámara**. Tres golpes animados
+  (alza, slam, giro) se disparan al llevar el prensador sobre el
+  portafiltro. El clip termina aunque el tracker parpadee, y el
+  último golpe pega más fuerte para que no se vea anticlimático.
+
+### Moler no se muere al girar
+
+- Un círculo **ya no suelta la manivela**. La palma de canto deja de
+  parecer una mano y el puño se lee abierto; el molino se caía. El
+  tracker acepta ese escorzo, la costa dura más y el agarre espera
+  antes de soltar. Un blink sigue girando si el paso no es un salto.
+
+### El filtro se sienta en el gotero
+
+- El bowl **ya no queda a la derecha** del vidrio. El origen del
+  modelo empuja el hexágono; el parque lo corre hacia la izquierda
+  sobre el cono.
+
+- Al vaciar el molido, el bowl **ya no cae a la mesa a través de la
+  taza**. Se queda en el cono del gotero. El asentamiento usaba la
+  altura del tablero y el hexágono quedaba atravesando el vidrio.
+
+### Cada proceso del flujo se puede terminar
+
+- El gate **ya no se queda en «Pidiendo la cámara…»**. El ratón está
+  disponible mientras cuelga el permiso, y Strict Mode vuelve a pedir
+  en el remount en vez de cancelar el único intento.
+- «Jugar con ratón» **entra en la carta**. Antes el sync exigía
+  landmarks y el botón no salía del paso; un cursor sin esqueleto
+  cuenta como una palma, y el atajo salta el sync.
+- Dos índices **ya no publican un retículo que salta**. El claim se
+  queda en la primera muñeca y no se muestra hasta que cuaja. Un
+  ghost en costa no reclama.
+- Un parpadeo del tracker **ya no tira el sync**. El hold baja despacio.
+- MediaPipe busca palmas más débiles y el molino se alcanza desde más
+  lejos. El retículo sigue el swipe sin comerse el temblor.
+
+### La carta y el juego se pueden terminar
+
+- El puntero **solo lo reclama un índice de verdad**. Un puño flojo no
+  traba. Dos manos que apuntan tienen que coincidir unos fotogramas.
+- El nombre **no pierde la carga** por un temblor de 4 px. El retículo
+  filtra el landmark y luego sigue; el hold es más corto.
+- El sync **ya no usa Left/Right**. Esas etiquetas se voltean al
+  arrancar y el paso no cerraba. Ahora usa el lado de la muñeca.
+- El tracker **sigue una muñeca más cerca** y tiembla menos en reposo.
+  La luz oscura se levanta un poco más. Agarrar en juego es más
+  generoso.
+
 ### Acercar la mano ya no mata el molino
 
 - Un close-up **sigue siendo una mano**. El filtro de calidad la tiraba

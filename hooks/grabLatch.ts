@@ -16,7 +16,7 @@ export type GrabLatchState = {
 
 const PINCH_SMOOTH = 0.45;
 const GRAB_ENTER_FRAMES = 2;
-const GRAB_EXIT_FRAMES = 5;
+const GRAB_EXIT_FRAMES = 12;
 
 /**
  * Grab latch with smoothed pinch + multi-frame enter/exit.

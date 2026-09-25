@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  CRANK_LOST_S,
+  CRANK_OPEN_S,
   canCommitRelease,
+  crankShouldHold,
   holderIsDriving,
   releaseReason,
 } from "./interactionState.ts";
@@ -25,6 +28,14 @@ test("an active pinch and an absent holder do not release", () => {
 
 test("tiny accidental actions are not committed", () => {
   assert.equal(canCommitRelease("opened", 0.04, 0.04), false);
+});
+
+test("a crank hold survives a blink and a side-on open", () => {
+  assert.equal(crankShouldHold(true, true, 0, 0), true);
+  assert.equal(crankShouldHold(true, false, 0, CRANK_OPEN_S * 0.4), true);
+  assert.equal(crankShouldHold(false, false, CRANK_LOST_S * 0.5, 0), true);
+  assert.equal(crankShouldHold(true, false, 0, CRANK_OPEN_S), false);
+  assert.equal(crankShouldHold(false, false, CRANK_LOST_S, 0), false);
 });
 
 test("a coasting holder is still driving the object", () => {

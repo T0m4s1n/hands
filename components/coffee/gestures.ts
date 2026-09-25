@@ -108,12 +108,14 @@ export function driveCrank(
   return moved;
 }
 
-/** Invented coast motion must not spin the mill. */
+/**
+ * A published hand may drive the mill. Coast is a blink mid-circle;
+ * driveCrank already ignores jumps, so a coasting wrist cannot teleport.
+ */
 export function crankHandIsLive(
   hand?: { tracking?: "live" | "coasting" } | null,
 ) {
-  if (!hand) return false;
-  return hand.tracking !== "coasting";
+  return Boolean(hand);
 }
 
 /* ---------- strokes: shaking, pressing ---------- */

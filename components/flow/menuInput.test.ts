@@ -3,9 +3,11 @@ import test from "node:test";
 import type { TrackedHand } from "../../hooks/useHandTracking.ts";
 import {
   MENU_HOLD_S,
+  MENU_LEAVE_GRACE_MS,
   MENU_PINCH_AFTER_S,
   canDwellSelect,
   canPinchSelect,
+  holdInterrupted,
   menuHoldAmount,
 } from "./menuInput.ts";
 
@@ -35,10 +37,13 @@ test("mouse fallback never selects merely by resting over an option", () => {
 });
 
 test("a fast sweep does not finish a dwell or a pinch", () => {
-  assert.ok(MENU_HOLD_S > 1.4);
+  assert.ok(MENU_HOLD_S > 1.05);
+  assert.ok(MENU_HOLD_S < 1.6);
   assert.ok(MENU_PINCH_AFTER_S > 0.4);
-  assert.ok(menuHoldAmount(200) < 0.2);
+  assert.ok(menuHoldAmount(200) < 0.25);
   assert.equal(menuHoldAmount(MENU_HOLD_S * 1000), 1);
   assert.equal(canPinchSelect(120), false);
   assert.equal(canPinchSelect(MENU_PINCH_AFTER_S * 1000), true);
+  assert.equal(holdInterrupted(80), false);
+  assert.equal(holdInterrupted(MENU_LEAVE_GRACE_MS), true);
 });

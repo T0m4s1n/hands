@@ -35,6 +35,7 @@ import {
 } from "@/components/coffee/liquid";
 import {
   canCommitRelease,
+  crankShouldHold,
   releaseReason,
 } from "@/components/coffee/interactionState";
 import {
@@ -86,6 +87,8 @@ import {
   DRIPPER,
   GROUP,
   brewAt,
+  dripperPark,
+  dripperSeatZ,
   dripperVessel,
   usesDripper,
   usesGroup,
@@ -97,6 +100,14 @@ import {
   dumpReleases,
   scoopDumpPose,
 } from "@/components/coffee/beanDump";
+import {
+  TAMP_DWELL_S,
+  TAMP_GAP_S,
+  tampAmount,
+  tampHits,
+  tampPose,
+  tampSetOpen,
+} from "@/components/coffee/tampPress";
 import { destinationOf } from "@/components/flow/playCopy";
 import { CRANK_ARM, CREMA, GROUNDS, Level, Prop } from "@/components/coffee/props";
 import { playSfx, setWorkLoop, type WorkLoop } from "@/lib/audio";
@@ -124,9 +135,9 @@ export type StageStatus = {
 };
 
 /** Reach matches the locked glove size — not the MediaPipe image span. */
-const GRAB_RADIUS = 1.55;
+const GRAB_RADIUS = 1.88;
 /** The mill is a bigger target so the player does not lean into the lens. */
-const CRANK_GRAB_RADIUS = 1.9;
+const CRANK_GRAB_RADIUS = 2.15;
 const REST_Z = 0.12;
 /**
  * The height a carried object rides at when it has nothing to clear.
@@ -162,11 +173,12 @@ const PUBLISH_INTERVAL = 0.08;
 const HINT_DOTS = 7;
 
 /**
- * How far the hand has to travel for a press or a shake to count as one. Small
- * enough to be comfortable, large enough that tracking jitter never reaches it.
+ * How far the hand has to travel for a shake to count as one. Small enough
+ * to be comfortable, large enough that tracking jitter never reaches it.
  */
-const PRESS_THROW = 0.38;
 const SHAKE_THROW = 0.45;
+/** Height the mallet works from — slam pose is added on top of this. */
+const TAMP_REST_Z = 0.5;
 
 /**
  * Nobody repeats a stage here, so nobody can be stuck in one either: after this
@@ -234,6 +246,10 @@ function createGameState(recipe: Recipe, round: number) {
     dumpElapsed: 0,
     dumpDwell: 0,
     dumpMark: 0,
+    tamping: false,
+    tampElapsed: 0,
+    tampHit: false,
+    tampDwell: 0,
     pos: new Vector3(first.item[0], first.item[1], REST_Z),
     done: false,
     publishAt: -1,
@@ -281,6 +297,10 @@ function createGameState(recipe: Recipe, round: number) {
     } as Placed,
     /** Height it settled at last frame, to tell a landing from a carry. */
     wasResting: REST_Z,
+    /** Scene time the crank holder vanished — 0 while the hand is published. */
+    crankLostAt: -1,
+    /** Scene time the crank fist read open — 0 while it is still shut. */
+    crankOpenAt: -1,
 
     v: new Vector3(),
     tint: new Color(),
@@ -559,11 +579,33 @@ export function CoffeeGame({
       playSfx("whoosh");
     };
 
+    const beginTamp = () => {
+      if (game.tamping) return;
+      game.tamping = true;
+      game.tampElapsed = 0;
+      game.tampHit = false;
+      game.changed = true;
+      playSfx("whoosh");
+    };
+
+    const tampGoal = stage.kind === "tamp" ? stage.goal : 3;
+    let tampDust = 0;
+
     if (game.dumping) {
       game.dumpElapsed += dt;
       const amount = dumpAmount(game.dumpElapsed);
-      game.pos.x = approach(game.pos.x, stage.target[0], 12, dt);
-      game.pos.y = approach(game.pos.y, stage.target[1], 12, dt);
+      const dumpAt = dripperPark(stage, stage.target);
+      game.pos.x = approach(game.pos.x, dumpAt[0], 12, dt);
+      game.pos.y = approach(game.pos.y, dumpAt[1], 12, dt);
+      const dumpPark = dripperSeatZ(
+        stage,
+        flatDistance(game.pos.x, game.pos.y, stage.target[0], stage.target[1]),
+        stageStation(stage.kind, stage.sits).mouth,
+        game.lift.value,
+      );
+      if (dumpPark !== game.lift.value) {
+        game.lift.value = approach(game.lift.value, dumpPark + 0.16, 10, dt);
+      }
       if (dumpReleases(amount) && game.cargoLoaded && KIT[stage.holds]?.cargo) {
         const cargo = KIT[stage.holds]!.cargo!;
         game.cargoLoaded = false;
@@ -595,10 +637,54 @@ export function CoffeeGame({
       }
     }
 
+    if (stage.kind === "tamp" && game.tamping) {
+      const prev = tampAmount(game.tampElapsed);
+      game.tampElapsed += dt;
+      const amount = tampAmount(game.tampElapsed);
+      const strike = game.tampHit ? Math.max(0, game.amount - 1) : game.amount;
+      const press = tampPose(amount, strike);
+      game.pos.x = approach(game.pos.x, stage.target[0], 12, dt);
+      game.pos.y = approach(game.pos.y, stage.target[1], 12, dt);
+      game.rideHeight = TAMP_REST_Z;
+      tampDust = press.dust;
+      if (tampHits(prev, amount) && !game.tampHit) {
+        game.tampHit = true;
+        game.amount += 1;
+        game.grow.velocity -= strike >= 2 ? 12 : 8;
+        game.swell.velocity += strike >= 2 ? 2.2 : 1.5;
+        playSfx("tamp");
+        playSfx("clink");
+      }
+      if (amount >= 1) {
+        game.tamping = false;
+        game.tampElapsed = 0;
+        game.tampHit = false;
+        game.tampDwell = -TAMP_GAP_S;
+        if (game.amount >= tampGoal) {
+          commit(bandScore(game.amount, stage.band ?? [2, 4]));
+          return;
+        }
+      }
+    } else if (
+      stage.kind === "tamp" &&
+      game.amount > 0 &&
+      game.amount < tampGoal
+    ) {
+      game.tampDwell += dt;
+      if (game.tampDwell >= TAMP_DWELL_S) beginTamp();
+    }
+
     if (game.lifecycle === "settling") {
-      game.pos.x = approach(game.pos.x, stage.target[0], 8, dt);
-      game.pos.y = approach(game.pos.y, stage.target[1], 8, dt);
-      stepSpring(game.lift, REST_Z, 95, dt, 0.2);
+      const settleAt = dripperPark(stage, stage.target);
+      game.pos.x = approach(game.pos.x, settleAt[0], 8, dt);
+      game.pos.y = approach(game.pos.y, settleAt[1], 8, dt);
+      const park = dripperSeatZ(
+        stage,
+        flatDistance(game.pos.x, game.pos.y, stage.target[0], stage.target[1]),
+        stageStation(stage.kind, stage.sits).mouth,
+        REST_Z,
+      );
+      stepSpring(game.lift, park, 95, dt, 0.2);
       stepSpring(game.grow, 1.04, 140, dt, 0.45);
       if (itemRef.current) {
         itemRef.current.position.set(game.pos.x, game.pos.y, game.lift.value);
@@ -676,6 +762,10 @@ export function CoffeeGame({
       game.dumping = false;
       game.dumpElapsed = 0;
       game.dumpDwell = 0;
+      game.tamping = false;
+      game.tampElapsed = 0;
+      game.tampHit = false;
+      game.tampDwell = 0;
       calmSlosh(sloshRef.current);
       game.spilled = 0;
       game.overflowing = 0;
@@ -711,13 +801,20 @@ export function CoffeeGame({
     let nearReach = Infinity;
     let working = 0;
     let holderIsLive = false;
+    const tampBusy = tampSetOpen(game.tamping, game.amount, tampGoal);
     if (game.dumping) {
       near = true;
       nearHand = game.holder;
       working = 1;
       holderIsLive = true;
     }
-    if (!game.dumping) {
+    if (tampBusy) {
+      near = true;
+      nearHand = game.holder ?? nearHand;
+      working = Math.max(working, 0.45 + tampDust * 0.55);
+      holderIsLive = true;
+    }
+    if (!game.dumping && !tampBusy) {
     for (const handedness of ["Left", "Right"] as const) {
       const hand = hands.find((item) => item.handedness === handedness);
       if (!hand) {
@@ -761,9 +858,10 @@ export function CoffeeGame({
             // what teleported the mill when a wrist re-entered the frame.
             game.turn = newTurn(game.angle);
             game.turn.turned = game.amount;
+            game.crankLostAt = -1;
+            game.crankOpenAt = -1;
           }
           if (stage.kind === "shake") game.stroke = newStroke(hand.cursor.x);
-          if (stage.kind === "tamp") game.stroke = newStroke(hand.cursor.y);
         }
       }
       game.wasGrabbing[handedness] = grabbing;
@@ -780,11 +878,31 @@ export function CoffeeGame({
       : undefined;
     // Coasting is still a live hold. A blink must not drop the cup.
     holderIsLive = Boolean(holder);
-    const release = releaseReason(
+    let release = releaseReason(
       game.holder !== null,
       holderIsLive,
       Boolean(holder?.isGrabbing),
     );
+    if ((stage.kind === "crank" || stage.kind === "tamp") && game.holder) {
+      if (holder) {
+        game.crankLostAt = -1;
+        if (holder.isGrabbing) game.crankOpenAt = -1;
+        else if (game.crankOpenAt < 0) game.crankOpenAt = time;
+      } else if (game.crankLostAt < 0) {
+        game.crankLostAt = time;
+      }
+      const lostS = game.crankLostAt < 0 ? 0 : time - game.crankLostAt;
+      const openS = game.crankOpenAt < 0 ? 0 : time - game.crankOpenAt;
+      if (
+        crankShouldHold(Boolean(holder), Boolean(holder?.isGrabbing), lostS, openS)
+      ) {
+        release = "none";
+        holderIsLive = true;
+      }
+    } else {
+      game.crankLostAt = -1;
+      game.crankOpenAt = -1;
+    }
     const released = release !== "none";
 
     if (
@@ -814,7 +932,7 @@ export function CoffeeGame({
       game.dumpDwell = 0;
     }
 
-    if (holder && holderIsLive && !released && !game.dumping) {
+    if (holder && holderIsLive && !released && !game.dumping && !game.tamping) {
       if (stage.kind === "crank") {
         if (crankHandIsLive(holder)) {
           const angle = Math.atan2(
@@ -932,17 +1050,12 @@ export function CoffeeGame({
           game.amount = stroke.count;
           working = 1;
         } else if (stage.kind === "tamp") {
-          const stroke = (game.stroke ??= newStroke(holder.cursor.y));
-          const began = updateStroke(stroke, holder.cursor.y, PRESS_THROW);
-          // Only the downward half of a press counts, so lifting the tamper
-          // back up between presses never scores twice.
-          if (began < 0 && inside) {
-            game.amount += 1;
-            // The press lands with a thump.
-            game.grow.velocity -= 5;
-            game.swell.velocity += 0.8;
-            working = 1;
-            playSfx("tamp");
+          game.rideHeight = TAMP_REST_Z;
+          if (inside) {
+            game.tampDwell += dt;
+            if (game.tampDwell >= TAMP_DWELL_S) beginTamp();
+          } else if (game.tampDwell > 0) {
+            game.tampDwell = 0;
           }
         }
       }
@@ -963,7 +1076,7 @@ export function CoffeeGame({
       }
     }
 
-    if (released) {
+    if (released && !game.tamping) {
       const reach = flatDistance(
         game.pos.x,
         game.pos.y,
@@ -1008,7 +1121,7 @@ export function CoffeeGame({
 
     // Out of time: the stage is marked as it stands and the brew carries on.
     const limit = game.touched ? STAGE_LIMIT : IDLE_LIMIT;
-    if (!game.dumping && game.elapsed > limit) {
+    if (!game.dumping && !tampBusy && game.elapsed > limit) {
       commit(currentQuality(stage, game));
       return;
     }
@@ -1043,6 +1156,12 @@ export function CoffeeGame({
       support.z = REST_Z;
       support.shape = under.solid.shape;
       restingHeight = settleHeight(game.pos.x, game.pos.y, REST_Z, game.supports);
+      restingHeight = dripperSeatZ(
+        stage,
+        flatDistance(game.pos.x, game.pos.y, stage.target[0], stage.target[1]),
+        stageStation(stage.kind, stage.sits).mouth,
+        restingHeight,
+      );
     }
     const carryHeight =
       stage.kind === "crank"
@@ -1109,16 +1228,22 @@ export function CoffeeGame({
         const shake = 0.12 + working * 0.22;
         item.rotation.z = Math.sin(time * 16) * shake;
         item.rotation.x = Math.sin(time * 13.4) * shake * 0.45;
+      } else if (game.tamping) {
+        const strike = game.tampHit ? Math.max(0, game.amount - 1) : game.amount;
+        const press = tampPose(tampAmount(game.tampElapsed), strike);
+        item.position.set(
+          game.pos.x,
+          game.pos.y,
+          game.lift.value + press.lift,
+        );
+        item.rotation.set(press.pitch, press.twist * 0.22, press.twist);
+        item.scale.setScalar(
+          Math.max(game.grow.value, 0.05) * (1 - press.squash * 0.12),
+        );
       } else if (stage.kind === "tamp" && held) {
-        // A real tamp is a short slam: lift, drop, twist. The mallet is
-        // already pitched onto its head so this reads as pressing, not
-        // waving a vertical hammer.
-        const dipping = (game.stroke?.dir ?? 0) < 0;
-        item.position.z += dipping ? -0.28 : 0.1;
-        item.rotation.x = dipping ? 0.22 : 0.06;
-        item.rotation.z = dipping
-          ? Math.sin(time * 18) * 0.08
-          : Math.sin(time * 4) * 0.03;
+        item.position.z += 0.1 + Math.sin(time * 5.2) * 0.035;
+        item.rotation.x = 0.1;
+        item.rotation.z = Math.sin(time * 3.1) * 0.05;
       } else if (stage.kind === "hold" && held) {
         const locked = overStation(
           flatDistance(
@@ -1204,7 +1329,8 @@ export function CoffeeGame({
           stage.kind === "tilt" ||
           stage.kind === "tamp") &&
           held &&
-          !onMark));
+          !onMark &&
+          !game.tamping));
     for (let i = 0; i < HINT_DOTS; i++) {
       const dot = hintRefs.current[i];
       if (!dot) continue;
@@ -1313,7 +1439,12 @@ export function CoffeeGame({
       dt,
     );
     // The grounds jump while they are being worked.
-    game.churn = approach(game.churn, working > 0.12 ? working : 0, 10, dt);
+    game.churn = approach(
+      game.churn,
+      tampDust > 0.04 ? tampDust : working > 0.12 ? working : 0,
+      10,
+      dt,
+    );
     churnRef.current = game.churn;
 
     const carrySpeed = Math.hypot(
@@ -1455,10 +1586,18 @@ export function CoffeeGame({
       handedness: game.holder ?? nearHand,
       tool: stage.holds,
       near,
-      holding: held || game.dumping,
+      holding: held || game.dumping || game.tamping,
       gripX: game.pos.x,
       gripY: game.pos.y,
-      gripZ: game.lift.value + 0.1,
+      gripZ:
+        game.lift.value +
+        (game.tamping
+          ? tampPose(
+              tampAmount(game.tampElapsed),
+              game.tampHit ? Math.max(0, game.amount - 1) : game.amount,
+            ).lift
+          : 0) +
+        0.1,
       dump: game.dumping ? dumpAmount(game.dumpElapsed) : 0,
     });
   });
@@ -1565,17 +1704,17 @@ export function CoffeeGame({
         {shown.kind === "tamp" && (
           <>
             <Beans
-              position={[0, -0.42, 0.22]}
-              radius={0.36}
-              count={20}
+              position={[0, -0.28, 0.28]}
+              radius={0.4}
+              count={26}
               shake={churnRef}
               colour={GROUNDS}
               heap
             />
             <GroundDust
               amount={churnRef}
-              position={[0, 0, 0.32]}
-              count={8}
+              position={[0, -0.12, 0.4]}
+              count={18}
             />
           </>
         )}

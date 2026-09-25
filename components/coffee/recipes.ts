@@ -17,7 +17,7 @@ export type StageKind =
   | "crank"
   /** Keep it on the station while something fills. Scored on the level. */
   | "hold"
-  /** Press down on the basket. Scored on how evenly you pressed. */
+  /** Authored slams over the basket. Scored on how many landed. */
   | "tamp"
   /** Grip and shake. Scored on how many times you reversed direction. */
   | "shake"
@@ -237,7 +237,8 @@ const ESPRESSO: Recipe = {
     {
       id: "tamp",
       title: "Prensa",
-      instruction: "Prensa sobre el portafiltro.",
+      instruction:
+        "Llévalo sobre el portafiltro. El prensador golpea solo.",
       kind: "tamp",
       item: [-2.1, -0.9],
       target: STATION,

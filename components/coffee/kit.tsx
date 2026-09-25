@@ -499,8 +499,8 @@ function RoleDetails({
             />
           </mesh>
           {/* Paper filter seated in the cone — this is the "filtro", not a pan. */}
-          <mesh position={[0, 0, 1.04]}>
-            <coneGeometry args={[0.38, 0.3, 28, 1, true]} />
+          <mesh position={[0, 0, 0.98]}>
+            <coneGeometry args={[0.36, 0.28, 28, 1, true]} />
             <meshStandardMaterial
               color="#f3e2c4"
               roughness={0.86}

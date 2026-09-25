@@ -53,7 +53,7 @@ const near = (a: number, b: number, slack = 1e-6) =>
   const turn = newTurn(0.4);
   assert.equal(driveCrank(turn, 0.4 + Math.PI, 1 / 60), 0);
   assert.equal(turn.angle, 0.4);
-  assert.equal(crankHandIsLive({ tracking: "coasting" }), false);
+  assert.equal(crankHandIsLive({ tracking: "coasting" }), true);
   assert.equal(crankHandIsLive({ tracking: "live" }), true);
   assert.equal(crankHandIsLive(undefined), false);
   const slow = newTurn(0);

@@ -10,18 +10,18 @@ import { pinToLiveWrist } from "./handMotion.ts";
 import type { Handedness, Vec3 } from "./useHandTracking.ts";
 
 /** How far a wrist may travel between inferences and still be the same hand. */
-export const MATCH_RADIUS = 0.34;
+export const MATCH_RADIUS = 0.58;
 /** Frames a slot must disagree with a confident label before we relabel it. */
 const RELABEL_AFTER = 8;
 const LONE_RELABEL_AFTER = 12;
 /** Keep pose, pinch and carry through a blink or a brief occlusion. */
-export const COAST_FOR_MS = 900;
+export const COAST_FOR_MS = 1400;
 /** Remember the slot longer than the visual so re-entry does not swap sides. */
 export const IDENTITY_MEMORY_MS = 2400;
 
-const STILL_RATE = 10;
-const MOVING_RATE = 90;
-const MOVING_SPAN = 0.055;
+const STILL_RATE = 7;
+const MOVING_RATE = 72;
+const MOVING_SPAN = 0.06;
 
 export type TrackedDetection = {
   raw: Vec3[];

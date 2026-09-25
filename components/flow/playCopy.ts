@@ -70,7 +70,7 @@ export function stagePrompt({
   if (working) {
     if (kind === "crank") return "Sigue girando alrededor del molino";
     if (kind === "shake") return "Sigue agitando de lado a lado";
-    if (kind === "tamp") return `Sigue prensando sobre ${dest}`;
+    if (kind === "tamp") return "El prensador golpea el café";
     if (kind === "hold") return "El espresso cae a la taza — suelta en la franja";
     if (kind === "tilt") {
       return sits === "mug"
@@ -114,8 +114,8 @@ export function stagePrompt({
         : "Agítalo de lado a lado";
     case "tamp":
       return pointer
-        ? `Mantén clic y prensa sobre ${dest}`
-        : `Prensa sobre ${dest}`;
+        ? `Mantén clic sobre ${dest} — el prensador golpea`
+        : `Llévalo sobre ${dest} — el prensador golpea`;
     default:
       return `Trabaja sobre ${dest}`;
   }

@@ -6,7 +6,9 @@ export function canDwellSelect(hand: TrackedHand | undefined): boolean {
 }
 
 /** How long the index must rest on a name before the order goes through. */
-export const MENU_HOLD_S = 1.7;
+export const MENU_HOLD_S = 1.2;
+/** A twitch off the name must not dump a charge that was almost done. */
+export const MENU_LEAVE_GRACE_MS = 240;
 
 /**
  * A pinch or fist only confirms after the tip has already been on that
@@ -25,4 +27,8 @@ export function canPinchSelect(
   pinchAfterS = MENU_PINCH_AFTER_S,
 ): boolean {
   return heldMs >= pinchAfterS * 1000;
+}
+
+export function holdInterrupted(awayMs: number, graceMs = MENU_LEAVE_GRACE_MS) {
+  return awayMs >= graceMs;
 }

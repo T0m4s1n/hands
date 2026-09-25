@@ -18,10 +18,10 @@ export type LightingState = {
 };
 
 export function lightingFilter(meanLuma: number): string {
-  if (meanLuma >= 118) return "contrast(1.06)";
-  if (meanLuma >= 85) return "brightness(1.12) contrast(1.12)";
-  if (meanLuma >= 55) return "brightness(1.28) contrast(1.18)";
-  return "brightness(1.48) contrast(1.24)";
+  if (meanLuma >= 118) return "contrast(1.1)";
+  if (meanLuma >= 80) return "brightness(1.22) contrast(1.16)";
+  if (meanLuma >= 50) return "brightness(1.42) contrast(1.22)";
+  return "brightness(1.68) contrast(1.3)";
 }
 
 export function meanLuma(

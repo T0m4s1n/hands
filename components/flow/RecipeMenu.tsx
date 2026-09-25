@@ -13,8 +13,10 @@ import { menuAimPoint } from "@/hooks/screenAim";
 import {
   canDwellSelect,
   canPinchSelect,
+  holdInterrupted,
   menuHoldAmount,
 } from "./menuInput";
+import { hitMenuOption } from "./menuHit";
 import { playSfx, preloadSfx, unlockAudio } from "@/lib/audio";
 
 /**
@@ -41,7 +43,7 @@ export function RecipeMenu({
   const pointerRef = useRef<HTMLDivElement>(null);
   const hintRef = useRef<HTMLParagraphElement>(null);
   const pickedRef = useRef(false);
-  const holdRef = useRef({ index: -1, started: 0 });
+  const holdRef = useRef({ index: -1, started: 0, leftAt: 0 });
   const wasGrabbing = useRef(false);
   const lockIdRef = useRef(0);
   const focusRef = useRef(0);
@@ -137,7 +139,7 @@ export function RecipeMenu({
       // Identity is lockId, not Left/Right — those labels flip mid-aim.
       if (cursor.lockId !== lockIdRef.current) {
         lockIdRef.current = cursor.lockId;
-        holdRef.current = { index: -1, started: 0 };
+        holdRef.current = { index: -1, started: 0, leftAt: 0 };
         setCharge(focusRef.current, 0);
         wasGrabbing.current = false;
       }
@@ -157,18 +159,7 @@ export function RecipeMenu({
 
       const x = cursor.x * window.innerWidth;
       const y = cursor.y * window.innerHeight;
-      let next = -1;
-      for (const box of boxesRef.current) {
-        if (
-          x >= box.left &&
-          x <= box.right &&
-          y >= box.top &&
-          y <= box.bottom
-        ) {
-          next = box.i;
-          break;
-        }
-      }
+      const next = hitMenuOption(x, y, boxesRef.current, focusRef.current);
 
       if (next >= 0) applyFocus(next);
 
@@ -178,7 +169,7 @@ export function RecipeMenu({
         const tip = menuAimPoint(hand);
         if (!tip) continue;
         const d = Math.hypot(tip.x - cursor.x, tip.y - cursor.y);
-        if (d > 0.16 || d >= ownerDist) continue;
+        if (d > 0.24 || d >= ownerDist) continue;
         owner = hand;
         ownerDist = d;
       }
@@ -186,9 +177,14 @@ export function RecipeMenu({
 
       if (next >= 0 && !pointerMode) {
         if (holdRef.current.index !== next) {
-          holdRef.current = { index: next, started: performance.now() };
+          holdRef.current = {
+            index: next,
+            started: performance.now(),
+            leftAt: 0,
+          };
           setCharge(next, 0);
         } else {
+          holdRef.current.leftAt = 0;
           const amount = menuHoldAmount(
             performance.now() - holdRef.current.started,
           );
@@ -196,8 +192,11 @@ export function RecipeMenu({
           if (amount >= 1) pick(RECIPES[next]);
         }
       } else if (holdRef.current.index !== -1) {
-        holdRef.current.index = -1;
-        setCharge(focusRef.current, 0);
+        if (!holdRef.current.leftAt) holdRef.current.leftAt = performance.now();
+        if (holdInterrupted(performance.now() - holdRef.current.leftAt)) {
+          holdRef.current = { index: -1, started: 0, leftAt: 0 };
+          setCharge(focusRef.current, 0);
+        }
       }
 
       const edge = cursor.grabbing && !wasGrabbing.current;
@@ -232,7 +231,8 @@ export function RecipeMenu({
       if (event.pointerType === "touch") return;
       const hands = handsRef.current ?? [];
       const cameraLive = hands.some(
-        (hand) => hand.smoothedLandmarks.length >= 9,
+        (hand) =>
+          hand.smoothedLandmarks.length >= 9 && hand.tracking !== "coasting",
       );
       if (cameraLive) return;
 
@@ -243,18 +243,12 @@ export function RecipeMenu({
       }
       if (hintRef.current) hintRef.current.style.opacity = "0";
       measureHits();
-      let next = -1;
-      for (const box of boxesRef.current) {
-        if (
-          event.clientX >= box.left &&
-          event.clientX <= box.right &&
-          event.clientY >= box.top &&
-          event.clientY <= box.bottom
-        ) {
-          next = box.i;
-          break;
-        }
-      }
+      const next = hitMenuOption(
+        event.clientX,
+        event.clientY,
+        boxesRef.current,
+        focusRef.current,
+      );
       if (next >= 0) applyFocus(next);
     };
     window.addEventListener("pointermove", onMove);
@@ -301,7 +295,7 @@ export function RecipeMenu({
                 {...(i === 0 ? { "data-on": "" } : {})}
                 onMouseEnter={() => {
                   applyFocus(i);
-                  holdRef.current = { index: i, started: performance.now() };
+                  holdRef.current = { index: i, started: performance.now(), leftAt: 0 };
                   setCharge(i, 0);
                 }}
                 onClick={() => {

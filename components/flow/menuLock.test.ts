@@ -149,6 +149,20 @@ describe("menu lock (PROTECTED)", () => {
     assert.equal(next.lockId, 2);
   });
 
+  it("a pair of curled hands does not claim the carta", () => {
+    const lock = emptyLock();
+    const view = resolveLock(
+      [
+        curled("Left", { x: 0.3, y: 0.5 }),
+        curled("Right", { x: 0.68, y: 0.5 }),
+      ],
+      lock,
+      400,
+    );
+    assert.equal(view.lockId, 0);
+    assert.equal(view.active, false);
+  });
+
   it("fresh lock prefers the extended index", () => {
     const pick = pickFreshLock([
       curled("Left", { x: 0.3, y: 0.5 }),
@@ -156,6 +170,36 @@ describe("menu lock (PROTECTED)", () => {
     ]);
     assert.ok(pick);
     assert.equal(pick.handedness, "Right");
+  });
+
+  it("two pointing hands do not jump the tip before a claim", () => {
+    const lock = emptyLock();
+    const left = pointing("Left", { x: 0.28, y: 0.5 });
+    const right = pointing("Right", { x: 0.7, y: 0.5 });
+
+    const first = resolveLock([left, right], lock, 1000);
+    assert.equal(first.lockId, 0);
+    assert.equal(first.active, false);
+
+    const flipped = resolveLock([right, left], lock, 1016);
+    assert.equal(flipped.lockId, 0);
+    assert.equal(flipped.active, false);
+
+    const claimed = resolveLock([right, left], lock, 1032);
+    assert.equal(claimed.active, true);
+    assert.equal(claimed.lockId, 1);
+    assert.equal(claimed.side, "Left");
+    assert.ok(claimed.tip);
+    assert.ok(Math.abs(claimed.tip.x - (0.28 + 0.05)) < 0.03);
+  });
+
+  it("a coasting ghost cannot steal a fresh claim", () => {
+    const lock = emptyLock();
+    const ghost = pointing("Left", { x: 0.3, y: 0.5 }, { tracking: "coasting" });
+    const live = pointing("Right", { x: 0.66, y: 0.48 });
+    const view = resolveLock([ghost, live], lock, 400);
+    assert.equal(view.side, "Right");
+    assert.equal(view.lockId, 1);
   });
 
   it("mouse fallback (no landmarks) can still claim", () => {

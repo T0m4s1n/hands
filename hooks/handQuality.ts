@@ -21,13 +21,15 @@ export function skeletonQuality(landmarks: readonly Vec3[]): number {
 
   const palm = Math.hypot(middle.x - wrist.x, middle.y - wrist.y);
   const width = Math.hypot(index.x - pinky.x, index.y - pinky.y);
-  if (palm < 0.022 || width < 0.016) return 0;
+  // Edge-on while cranking collapses width. That is still a hand.
+  if (palm < 0.016) return 0;
+  if (width < 0.006 && palm < 0.03) return 0;
 
   let spread = 0;
   for (const point of landmarks) {
     spread += Math.hypot(point.x - wrist.x, point.y - wrist.y);
   }
-  if (spread < 0.18) return 0;
+  if (spread < 0.1) return 0;
 
   const ratio = width / Math.max(palm, 1e-5);
   // Only a smear that ate the whole frame, with no finger layout, is junk.
@@ -37,10 +39,11 @@ export function skeletonQuality(landmarks: readonly Vec3[]): number {
 
   let score = 0.5;
   if (ratio > 0.4 && ratio < 2.5) score += 0.22;
+  else if (ratio >= 0.08) score += 0.12;
   if (palm > 0.045 && palm < 0.38) score += 0.16;
-  else if (palm >= 0.38 && ratio > 0.32 && ratio < 2.9) score += 0.16;
+  else if (palm >= 0.38 && ratio > 0.12 && ratio < 2.9) score += 0.16;
   const thumbReach = Math.hypot(thumb.x - wrist.x, thumb.y - wrist.y);
-  if (thumbReach > palm * 0.25) score += 0.08;
+  if (thumbReach > palm * 0.18) score += 0.08;
   return Math.min(1, score);
 }
 
@@ -71,6 +74,6 @@ export function keepGoodHands<T extends { raw: Vec3[]; labelScore?: number }>(
   return detections.filter((detection) => {
     const quality = skeletonQuality(detection.raw);
     if (quality >= MIN_SKELETON_QUALITY) return true;
-    return quality >= 0.26 && (detection.labelScore ?? 0) >= 0.78;
+    return quality >= 0.18 && (detection.labelScore ?? 0) >= 0.42;
   });
 }

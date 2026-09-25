@@ -219,7 +219,7 @@ export function HandTrackedApp() {
     };
   }, []);
 
-  const showGate = status !== "ready";
+  const showGate = status !== "ready" && phase === "sync";
   const loading = status === "loading-model";
   const playing = phase === "play";
   const policy = phasePolicy(phase);
@@ -233,6 +233,22 @@ export function HandTrackedApp() {
   const toMenu = useCallback(() => {
     void go(() => setPhase("menu"));
   }, [go]);
+
+  const playWithMouse = useCallback(() => {
+    setPhase("menu");
+    try {
+      enablePointerFallback();
+    } catch (err) {
+      console.error("pointer fallback failed", err);
+    }
+  }, [enablePointerFallback]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("raton") === "1" || params.get("mouse") === "1") {
+      playWithMouse();
+    }
+  }, [playWithMouse]);
 
   const pickRecipe = useCallback(
     (next: Recipe) => {
@@ -313,7 +329,7 @@ export function HandTrackedApp() {
         <HandSync
           handsRef={handsRef}
           onReady={toMenu}
-          onPointerFallback={enablePointerFallback}
+          onPointerFallback={playWithMouse}
         />
       )}
       {!showGate && phase === "menu" && (
@@ -338,7 +354,7 @@ export function HandTrackedApp() {
         <CameraGate
           loading={loading}
           onStream={(stream) => void start(stream)}
-          onPointerFallback={enablePointerFallback}
+          onPointerFallback={playWithMouse}
         />
       )}
     </div>

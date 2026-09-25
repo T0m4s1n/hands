@@ -340,11 +340,11 @@ export function useHandTracking() {
           // Look past two so a second body in the frame can be discarded.
           numHands: MAX_HANDS,
           // Find the palm even in a lifted-but-still-dim frame.
-          minHandDetectionConfidence: 0.32,
-          // A close-up clips fingertips and drops presence. The old 0.55
-          // cut the mill grab the moment the player leaned toward the lens.
-          minHandPresenceConfidence: 0.42,
-          minTrackingConfidence: 0.42,
+          minHandDetectionConfidence: 0.24,
+          // A close-up clips fingertips and drops presence. Circular crank
+          // also turns the palm edge-on and used to drop the mill.
+          minHandPresenceConfidence: 0.28,
+          minTrackingConfidence: 0.3,
         });
 
       let landmarker: HandLandmarker | undefined;

@@ -3,6 +3,13 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { TrackedHand } from "@/hooks/useHandTracking";
 import { playSfx } from "@/lib/audio";
+import {
+  SYNC_LEAVE_S,
+  SYNC_LOCK_S,
+  stepSyncHold,
+  syncCanLeave,
+  syncSlotFromHand,
+} from "./syncHands";
 
 /**
  * How long a hand has to stay in frame before it counts as locked.
@@ -12,10 +19,6 @@ import { playSfx } from "@/lib/audio";
  * nothing. A beat of stillness is the difference between "I saw you" and
  * "you are here".
  */
-const LOCK_FOR = 0.9;
-/** One locked hand is enough to leave; both is the polite ask. */
-const LEAVE_AFTER = 0.55;
-
 type Slot = { seen: boolean; locked: boolean };
 
 export function HandSync({
@@ -40,17 +43,18 @@ export function HandSync({
       const dt = Math.min(0.08, (now - last) / 1000);
       last = now;
       const hands = handsRef.current ?? [];
-      const seenLeft = hands.some(
-        (hand) => hand.handedness === "Left" && hand.tracking !== undefined,
-      );
-      const seenRight = hands.some(
-        (hand) => hand.handedness === "Right" && hand.tracking !== undefined,
-      );
+      let seenLeft = false;
+      let seenRight = false;
+      for (const hand of hands) {
+        const slot = syncSlotFromHand(hand);
+        if (slot === "Left") seenLeft = true;
+        else if (slot === "Right") seenRight = true;
+      }
       const hold = holdRef.current;
-      hold.Left = seenLeft ? hold.Left + dt : 0;
-      hold.Right = seenRight ? hold.Right + dt : 0;
-      const lockedLeft = hold.Left >= LOCK_FOR;
-      const lockedRight = hold.Right >= LOCK_FOR;
+      hold.Left = stepSyncHold(hold.Left, seenLeft, dt);
+      hold.Right = stepSyncHold(hold.Right, seenRight, dt);
+      const lockedLeft = hold.Left >= SYNC_LOCK_S;
+      const lockedRight = hold.Right >= SYNC_LOCK_S;
       if (lockedLeft && !heardRef.current.left) playSfx("sync");
       if (lockedRight && !heardRef.current.right) playSfx("sync");
       heardRef.current.left = lockedLeft;
@@ -67,7 +71,7 @@ export function HandSync({
       );
       const locked = Number(lockedLeft) + Number(lockedRight);
       hold.ready = locked >= 1 ? hold.ready + dt : 0;
-      if (!doneRef.current && hold.ready >= LEAVE_AFTER) {
+      if (!doneRef.current && syncCanLeave(locked, hold.ready)) {
         doneRef.current = true;
         onReady();
       }

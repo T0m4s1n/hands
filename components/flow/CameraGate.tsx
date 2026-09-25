@@ -8,6 +8,7 @@ import {
   requestCamera,
 } from "@/hooks/requestCamera";
 import { playSfx, unlockAudio } from "@/lib/audio";
+import { CAMERA_HANG_MS, cameraGateButtons } from "./gatePolicy";
 
 type Mood = "hope" | "cry";
 
@@ -140,7 +141,6 @@ export function CameraGate({
   onPointerFallback: () => void;
 }) {
   const onStreamRef = useRef(onStream);
-  const askedRef = useRef(false);
   const deliveredRef = useRef(false);
   const [asking, setAsking] = useState(true);
   const [waiting, setWaiting] = useState(false);
@@ -175,8 +175,7 @@ export function CameraGate({
   }, [fail]);
 
   useEffect(() => {
-    if (loading || askedRef.current) return;
-    askedRef.current = true;
+    if (loading) return;
     let cancelled = false;
     const hung = window.setTimeout(() => {
       if (cancelled || deliveredRef.current) return;
@@ -184,7 +183,7 @@ export function CameraGate({
       setLine(
         "Sin cámara no puede preparar nada. Dale permiso, o sigue con el ratón.",
       );
-    }, 2800);
+    }, CAMERA_HANG_MS);
     void (async () => {
       const permission = await queryCameraPermission();
       if (cancelled) return;
@@ -216,8 +215,8 @@ export function CameraGate({
     fail(new Error("Failed to start hand tracking."));
   }, [fail, loading]);
 
-  const busy = asking || loading || waiting;
-  const mood: Mood = busy ? "hope" : "cry";
+  const actions = cameraGateButtons({ asking, loading, waiting });
+  const mood: Mood = asking || loading || waiting ? "hope" : "cry";
   const title = mood === "cry" ? "La taza no te ve" : "Café a mano";
   const body = loading ? "Cámara lista. Cargando las manos…" : line;
 
@@ -228,24 +227,28 @@ export function CameraGate({
         <Cup mood={mood} />
       </div>
       <p className="t-body mt-2 max-w-md text-label-2">{body}</p>
-      {!busy && (
+      {(actions.showMouse || actions.showRetry) && (
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-          <Button
-            variant="secondary"
-            onClick={() => {
-              playSfx("click");
-              onPointerFallback();
-            }}
-          >
-            Continuar con el ratón
-          </Button>
-          <Button
-            disabled={waiting}
-            aria-busy={waiting}
-            onClick={() => void open()}
-          >
-            Aceptar cámara
-          </Button>
+          {actions.showMouse && (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                onPointerFallback();
+                playSfx("click");
+              }}
+            >
+              Continuar con el ratón
+            </Button>
+          )}
+          {actions.showRetry && (
+            <Button
+              disabled={waiting}
+              aria-busy={waiting}
+              onClick={() => void open()}
+            >
+              Aceptar cámara
+            </Button>
+          )}
         </div>
       )}
       <p className="t-footnote absolute inset-x-0 bottom-6 text-label-3">

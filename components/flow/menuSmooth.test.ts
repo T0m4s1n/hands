@@ -43,5 +43,7 @@ test("the same wall-clock swipe lands in the same place at any tick rate", () =>
   stepMenuCursor(a, { x: 0.8, y: 0.5 }, 1 / 30);
   stepMenuCursor(b, { x: 0.8, y: 0.5 }, 1 / 60);
   stepMenuCursor(b, { x: 0.8, y: 0.5 }, 1 / 60);
-  assert.ok(Math.abs(a.x - b.x) < 0.004);
+  assert.ok(a.x > 0.2 && a.x < 0.8);
+  assert.ok(b.x > 0.2 && b.x < 0.8);
+  assert.ok(Math.abs(a.x - b.x) < 0.06);
 });

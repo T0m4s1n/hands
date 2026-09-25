@@ -42,7 +42,7 @@ export function stageStation(kind: StageKind, sits: PropKind): Station {
     return { well: base.well, mouth: Math.max(base.mouth, 1.18) };
   }
   if (kind === "tamp") {
-    return { well: 0.54, mouth: 0.98 };
+    return { well: 0.54, mouth: 1.15 };
   }
   return base;
 }
@@ -52,7 +52,7 @@ export function stageStation(kind: StageKind, sits: PropKind): Station {
  * pestle tip. Reaching that tip meant leaning into the camera, which is
  * what killed recognition on "Muele".
  */
-export const CRANK_GRAB_WELL = 0.9;
+export const CRANK_GRAB_WELL = 1.15;
 
 export function crankGrabReach(handleDist: number, millDist: number): number {
   return Math.min(handleDist, Math.max(0, millDist - CRANK_GRAB_WELL));

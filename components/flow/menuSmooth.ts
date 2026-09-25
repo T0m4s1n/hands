@@ -1,29 +1,35 @@
 import { approach } from "../coffee/anim.ts";
 
 /** How eagerly the reticle sits still. Webcam tremor dies here. */
-export const CURSOR_STILL_RATE = 5;
-/** How eagerly it follows a real swipe. Still far below the old 0.72/frame. */
-export const CURSOR_MOVE_RATE = 14;
+export const CURSOR_STILL_RATE = 6;
+/** How eagerly it follows a real swipe. */
+export const CURSOR_MOVE_RATE = 28;
 /** Image-plane travel that counts as a swipe, not a shake. */
-export const CURSOR_SPAN = 0.05;
+export const CURSOR_SPAN = 0.04;
 /** Hops smaller than this only creep — they never speed the chase. */
-export const CURSOR_DEAD = 0.008;
+export const CURSOR_DEAD = 0.007;
 /** Residual settle onto the true tip so we do not park a few pixels off. */
-export const CURSOR_CREEP = 2.4;
+export const CURSOR_CREEP = 3.2;
+/** First pole: kill landmark noise before the reticle chases. */
+export const CURSOR_AIM_RATE = 34;
 
 export type CursorSmooth = {
   x: number;
   y: number;
+  aimX: number;
+  aimY: number;
   seeded: boolean;
 };
 
 export function emptyCursorSmooth(): CursorSmooth {
-  return { x: 0.5, y: 0.5, seeded: false };
+  return { x: 0.5, y: 0.5, aimX: 0.5, aimY: 0.5, seeded: false };
 }
 
 export function seedCursor(state: CursorSmooth, x: number, y: number) {
   state.x = x;
   state.y = y;
+  state.aimX = x;
+  state.aimY = y;
   state.seeded = true;
 }
 
@@ -35,9 +41,9 @@ function chaseRate(travel: number): number {
 }
 
 /**
- * Frame-rate independent fingertip follow. A still hand barely moves the
- * reticle; a swipe is allowed to catch up. First sample snaps so a new
- * lock does not ease in from the last café.
+ * Two-pole fingertip follow. The aim eats landmark noise; the reticle
+ * then chases that cleaned point. A still hand barely moves; a swipe
+ * catches up. First sample snaps so a new lock does not ease from afar.
  */
 export function stepMenuCursor(
   state: CursorSmooth,
@@ -49,10 +55,13 @@ export function stepMenuCursor(
     return { x: state.x, y: state.y };
   }
 
-  const travel = Math.hypot(target.x - state.x, target.y - state.y);
   const t = Math.min(0.08, Math.max(0, dt));
+  state.aimX = approach(state.aimX, target.x, CURSOR_AIM_RATE, t);
+  state.aimY = approach(state.aimY, target.y, CURSOR_AIM_RATE, t);
+
+  const travel = Math.hypot(state.aimX - state.x, state.aimY - state.y);
   const rate = chaseRate(travel);
-  state.x = approach(state.x, target.x, rate, t);
-  state.y = approach(state.y, target.y, rate, t);
+  state.x = approach(state.x, state.aimX, rate, t);
+  state.y = approach(state.y, state.aimY, rate, t);
   return { x: state.x, y: state.y };
 }

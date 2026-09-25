@@ -46,6 +46,15 @@ test("a hand held up to the lens is still a hand", () => {
   assert.equal(keepGoodHands([{ raw: close, labelScore: 0.5 }]).length, 1);
 });
 
+test("an edge-on fist mid-crank is still a hand", () => {
+  const side = OPEN_HAND.map((point) => ({
+    ...point,
+    x: OPEN_HAND[0].x + (point.x - OPEN_HAND[0].x) * 0.18,
+  }));
+  assert.ok(skeletonQuality(side) >= 0.28);
+  assert.equal(keepGoodHands([{ raw: side, labelScore: 0.5 }]).length, 1);
+});
+
 test("a collapsed cloud is junk", () => {
   const flat = OPEN_HAND.map(() => ({ x: 0.5, y: 0.5, z: 0 }));
   assert.equal(skeletonQuality(flat), 0);

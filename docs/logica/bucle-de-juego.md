@@ -12,7 +12,7 @@
 | `POUR_LIFT_Z` | 1.15 | 100 | Suelo de altura al verter, para que se vea lo de abajo |
 | `CRANK_Z` | 0.95 | 102 | Altura del pistilo durante toda la molienda |
 | `PUBLISH_INTERVAL` | 0.08 s | 103 | Límite de publicación de estado |
-| `PRESS_THROW` | 0.38 | 110 | Amplitud del golpe de prensado |
+| `TAMP_REST_Z` | 0.5 | — | Altura desde la que el martillo golpea |
 | `SHAKE_THROW` | 0.45 | 111 | Amplitud del golpe de agitado |
 | `STAGE_LIMIT` | 45 s | 122 | Reloj una vez tocado el objeto |
 | `IDLE_LIMIT` | 60 s | 123 | Reloj antes de tocarlo |
@@ -109,15 +109,13 @@ etapa en vez de heredar "a stale carry height from the last stage", que
 | `place` | Nada por fotograma | `placeScore(reach, radius)` al soltar o al agotarse el tiempo |
 | `crank` | `driveCrank` hacia `atan2(cursor − target)`; un salto o una costa no mueve el mango | `bandScore` |
 | `hold` | Dentro del anillo, `amount += rate * dt` | `bandScore` sobre nivel 0..1 |
-| `tamp` | `updateStroke(stroke, cursor.y, PRESS_THROW)`; sólo **bajando** y dentro del anillo suma 1 | `bandScore` |
+| `tamp` | Clip `tampPose` (alza, slam, giro). El tracker sólo dispara; el clip termina solo | `bandScore` |
 | `shake` | `updateStroke(stroke, cursor.x, SHAKE_THROW)`; cuenta cada cambio de sentido | `bandScore` |
 | `tilt` | `tilt = angleDelta(grabAngle, roll)`, `flow = pourFlow(tilt)`, `amount += flow * rate * dt` | `bandScore` |
 
-El prensado sólo cuenta la mitad de bajada, "so lifting the tamper back up
-between presses never scores twice". Además `grow.velocity -= 5` y
-`swell.velocity += 0.8`: "The press lands with a thump." El tamper **baja
-con el golpe** (`position.z -= 0.14` mientras `stroke.dir < 0`), para que un
-prensa se vea aterrizar y no sólo sume un número.
+El prensado es un clip de `tampPress.ts`, no un stroke de la webcam. Llevar
+el martillo sobre el portafiltro dispara alza → slam → giro. Tres golpes,
+el último más fuerte, y el set se acaba aunque el tracker parpadee.
 
 La jarra de `shake` se tambalea al ritmo del golpe. Un sacudido que sólo
 subía un contador se leía como un número que crecía sin motivo.

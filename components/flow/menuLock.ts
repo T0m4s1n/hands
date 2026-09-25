@@ -6,6 +6,8 @@ export type LockHand = {
   smoothedLandmarks: Vec3[];
   cursor: Vec3;
   isGrabbing: boolean;
+  /** Coasting ghosts must not steal a fresh claim. */
+  tracking?: "live" | "coasting";
 };
 
 export type LockTip = { x: number; y: number };
@@ -23,6 +25,9 @@ export type LockState = {
   seenAt: number;
   relockAfter: number;
   grabbing: boolean;
+  /** Wrist we are about to claim, while two hands argue. */
+  pendingWrist: LockTip | null;
+  pendingFrames: number;
 };
 
 export type LockView = {
@@ -44,6 +49,10 @@ export const RELOCK_COOLDOWN_MS = 220;
  * Two palms of one person sit ~0.25–0.40 apart, so this stays under a swap.
  */
 export const MAX_FOLLOW = 0.34;
+/** A resting / curled hand must not steal the carta pointer. */
+export const MIN_POINT_SCORE = 2.35;
+/** Two pointing hands must agree on a wrist this many samples. */
+export const CLAIM_FRAMES = 3;
 
 export function emptyLock(): LockState {
   return {
@@ -56,6 +65,8 @@ export function emptyLock(): LockState {
     seenAt: 0,
     relockAfter: 0,
     grabbing: false,
+    pendingWrist: null,
+    pendingFrames: 0,
   };
 }
 
@@ -100,13 +111,44 @@ export function wristOf(hand: LockHand): LockTip {
   return indexTipOf(hand) ?? { x: 0.5, y: 0.5 };
 }
 
-/** Candidate for a fresh lock: valid index tip required. */
+function isPointerFallback(hand: LockHand): boolean {
+  return hand.smoothedLandmarks.length < 13;
+}
+
+function pointScoreOf(hand: LockHand): number {
+  return isPointerFallback(hand)
+    ? 0
+    : indexPointScore(hand.smoothedLandmarks);
+}
+
+function canClaim(hand: LockHand): boolean {
+  if (hand.tracking === "coasting") return false;
+  if (!indexTipOf(hand)) return false;
+  return isPointerFallback(hand) || pointScoreOf(hand) >= MIN_POINT_SCORE;
+}
+
+function nearPending(
+  hands: readonly LockHand[],
+  pending: LockTip,
+): LockHand | null {
+  let best: LockHand | null = null;
+  let bestTravel = Infinity;
+  for (const hand of pointingHands(hands)) {
+    const travel = plane(wristOf(hand), pending);
+    if (travel > 0.14 || travel >= bestTravel) continue;
+    bestTravel = travel;
+    best = hand;
+  }
+  return best;
+}
+
+/** Candidate for a fresh lock: must actually be pointing, or be the mouse. */
 export function pickFreshLock(hands: readonly LockHand[]): LockHand | null {
   let best: LockHand | null = null;
   let bestScore = -Infinity;
   for (const hand of hands) {
-    if (!indexTipOf(hand)) continue;
-    const score = indexPointScore(hand.smoothedLandmarks);
+    if (!canClaim(hand)) continue;
+    const score = isPointerFallback(hand) ? 0 : pointScoreOf(hand);
     if (score > bestScore) {
       bestScore = score;
       best = hand;
@@ -156,8 +198,14 @@ function unlock(lock: LockState, now: number): LockView {
   lock.wrist = null;
   lock.tip = null;
   lock.grabbing = false;
+  lock.pendingWrist = null;
+  lock.pendingFrames = 0;
   lock.relockAfter = now + RELOCK_COOLDOWN_MS;
   return { tip: null, active: false, grabbing: false, side: null, lockId: 0 };
+}
+
+function pointingHands(hands: readonly LockHand[]): LockHand[] {
+  return hands.filter(canClaim);
 }
 
 function hold(
@@ -235,6 +283,8 @@ export function resolveLock(
 
   const claim = pickFreshLock(hands);
   if (!claim) {
+    lock.pendingWrist = null;
+    lock.pendingFrames = 0;
     return { tip: null, active: false, grabbing: false, side: null, lockId: 0 };
   }
 
@@ -243,19 +293,51 @@ export function resolveLock(
     return { tip: null, active: false, grabbing: false, side: null, lockId: 0 };
   }
 
+  const rivals = pointingHands(hands);
+  let winner = claim;
+  if (rivals.length > 1) {
+    const stuck = lock.pendingWrist
+      ? nearPending(hands, lock.pendingWrist)
+      : null;
+    if (stuck) {
+      lock.pendingFrames += 1;
+      winner = stuck;
+    } else {
+      lock.pendingWrist = wristOf(claim);
+      lock.pendingFrames = 1;
+      winner = claim;
+    }
+    if (lock.pendingFrames < CLAIM_FRAMES) {
+      return {
+        tip: indexTipOf(winner),
+        active: false,
+        grabbing: false,
+        side: null,
+        lockId: 0,
+      };
+    }
+  }
+
+  const won = indexTipOf(winner);
+  if (!won) {
+    return { tip: null, active: false, grabbing: false, side: null, lockId: 0 };
+  }
+
+  lock.pendingWrist = null;
+  lock.pendingFrames = 0;
   lock.nextId += 1;
   lock.lockId = lock.nextId;
-  lock.side = claim.handedness;
-  lock.tip = tip;
-  lock.wrist = wristOf(claim);
+  lock.side = winner.handedness;
+  lock.tip = won;
+  lock.wrist = wristOf(winner);
   lock.tipAt = now;
   lock.seenAt = now;
-  lock.grabbing = claim.isGrabbing;
+  lock.grabbing = winner.isGrabbing;
   return {
-    tip,
+    tip: won,
     active: true,
-    grabbing: claim.isGrabbing,
-    side: claim.handedness,
+    grabbing: winner.isGrabbing,
+    side: winner.handedness,
     lockId: lock.lockId,
   };
 }

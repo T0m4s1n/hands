@@ -5,6 +5,8 @@ import {
   DRIPPER,
   GROUP,
   brewAt,
+  dripperPark,
+  dripperSeatZ,
   dripperVessel,
   usesDripper,
   usesGroup,
@@ -14,6 +16,18 @@ test("the dripper bed sits in the cone, above the glass", () => {
   assert.ok(DRIPPER.heap[2] > 0.85, "grounds belong in the dripper, not the carafe");
   assert.ok(DRIPPER.bed > DRIPPER.heap[2], "the pour lands on the bed");
   assert.ok(DRIPPER.radius < 0.4, "the heap must fit inside the cone");
+});
+
+test("the filter bowl parks on the cone, not through the carafe", () => {
+  const tinto = RECIPES.find((recipe) => recipe.id === "tinto");
+  const place = tinto!.stages.find((stage) => stage.id === "filter")!;
+  assert.ok(DRIPPER.seat > 0.9, "must clear the glass body");
+  assert.ok(DRIPPER.seat < DRIPPER.bed + 0.08, "must sit in the cone, not hover");
+  assert.equal(dripperSeatZ(place, 0.2, 1.2, 0.12), DRIPPER.seat);
+  assert.equal(dripperSeatZ(place, 2.4, 1.2, 0.12), 0.12, "away from the glass it is on the table");
+  const parked = dripperPark(place, [0, 0.1]);
+  assert.ok(parked[0] < 0, "the bowl sits left of the glass origin");
+  assert.ok(parked[0] > -0.5, "still over the cone, not beside it");
 });
 
 test("coffee fills the glass body under the dripper", () => {

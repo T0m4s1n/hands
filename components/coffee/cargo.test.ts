@@ -93,7 +93,7 @@ test("grab latch ignores single-frame pinch noise", () => {
   // One open frame is not enough to release.
   state = applyGrabLatch(state, 0.9, thresholds);
   assert.equal(state.isGrabbing, true);
-  for (let i = 0; i < 5; i++) state = applyGrabLatch(state, 0.9, thresholds);
+  for (let i = 0; i < 12; i++) state = applyGrabLatch(state, 0.9, thresholds);
   assert.equal(state.isGrabbing, false);
 });
 
