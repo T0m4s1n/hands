@@ -11,6 +11,45 @@ sirve de nada dentro de seis meses.
 
 ## Sin publicar
 
+### La mano derecha ya no se lee como izquierda
+
+- El lado sale del **esqueleto y de MediaPipe**, no de en qué
+  mitad del espejo aparece la muñeca. Una derecha a la izquierda
+  de la selfie sigue siendo la derecha.
+
+### Moler es un clip, no un candado
+
+- Agarrar el molino **arranca la animación** (como prensar).
+  El pistilo orbita, las vueltas suben y el puntaje llega al
+  terminar. El clip ya no se apaga a sí mismo ni deja el paso
+  congelado.
+
+### Se juega con una sola mano
+
+- El tracker **publica una palma**. En el sync lee si es la
+  **izquierda o la derecha** (esqueleto + MediaPipe, no el lado de
+  la pantalla). El guante de esa mano es el que sigue; la otra no
+  aparece.
+
+### La mano se vuelve a reconocer al moverse
+
+- El candado anti-multitud **ya no suelta al barista**. Un gesto,
+  un acercarse o las dos manos a la vez siguen siendo la misma
+  persona. Solo se ignora una pareja lejana. Acercar la palma
+  (más grande) no se lee como otra gente.
+
+### El 3-2-1 abre el juego de verdad
+
+- Un solo iris llega a la mesa real. La cuenta **3-2-1** va encima,
+  con las manos ya en cámara, y al terminar empieza el juego en esa
+  misma mesa. Antes había otra escena muerta y un segundo iris.
+
+### La multitud no teletransporta los guantes
+
+- Con gente detrás o al lado, el tracker **se queda con la persona
+  que ya jugaba**. Si esas manos desaparecen un instante, los
+  guantes esperan en el sitio; no saltan a la pareja más cercana.
+
 ### Créditos en la portada
 
 - La primera página dice que es de la **Gobernación de Nariño** y

@@ -1,12 +1,12 @@
 import type { Handedness, Vec3 } from "./useHandTracking";
 
-/** Hands we publish. The game is one player with two gloves. */
-export const MAX_TRACKED_HANDS = 2;
+/** Hands we publish. The game is one palm — left or right, never both. */
+export const MAX_TRACKED_HANDS = 1;
 /**
- * Extra detections so we can choose one person's pair instead of one hand
- * from each stranger MediaPipe happened to rank first.
+ * A spare detection so a second body in the doorway can be ignored
+ * instead of stealing the barista.
  */
-export const DETECT_HAND_CANDIDATES = 4;
+export const DETECT_HAND_CANDIDATES = 2;
 
 export type HandDetection = {
   wrist: Vec3;
@@ -24,6 +24,8 @@ export type HandTrackHint = {
   velocity?: Vec3;
   /** Number of inference opportunities since this hand was last observed. */
   missed?: number;
+  /** Wrist-to-middle-knuckle span, to reject a smaller crowd hand. */
+  palmSpan?: number;
 };
 
 /**
@@ -77,8 +79,13 @@ export function landmarkChirality(
 }
 
 /**
- * One label for assignment. Trust a confident classifier, a clear skeleton,
- * or (last) which side of the mirrored frame the wrist sits on.
+ * One anatomical label. The camera is a selfie: wrist X is where the
+ * hand *appears*, not which hand it is. A right palm on the left half
+ * of the mirror is still the right hand — never read side from X.
+ *
+ * Detecting on the mirrored frame is what MediaPipe documents, so a
+ * decent classifier score is the side. The skeleton only steps in
+ * when that score is too weak to trust.
  */
 export function fuseHandedness(
   mpLabel: Handedness,
@@ -86,29 +93,15 @@ export function fuseHandedness(
   landmarks?: readonly Vec3[],
 ): { label: Handedness; score: number } {
   const geo = landmarks ? landmarkChirality(landmarks) : null;
-  const wrist = landmarks?.[0];
-  const screen: Handedness | null = wrist
-    ? wrist.x < 0.46
-      ? "Left"
-      : wrist.x > 0.54
-        ? "Right"
-        : null
-    : null;
 
-  if (geo && geo.score >= 0.55 && mpScore >= 0.72 && geo.label === mpLabel) {
-    return { label: mpLabel, score: Math.min(1, 0.62 + geo.score * 0.25) };
-  }
-  if (geo && geo.score >= 0.74 && mpScore < 0.62) {
-    return { label: geo.label, score: geo.score };
-  }
-  if (mpScore >= 0.82) {
+  if (mpScore >= 0.5) {
     return { label: mpLabel, score: mpScore };
   }
-  if (geo && geo.score >= 0.52) {
-    return { label: geo.label, score: geo.score * 0.92 };
+  if (geo && geo.score >= 0.74) {
+    return { label: geo.label, score: geo.score };
   }
-  if (screen && mpScore < 0.58) {
-    return { label: screen, score: 0.42 };
+  if (geo && geo.score >= 0.52 && geo.label === mpLabel) {
+    return { label: mpLabel, score: Math.max(mpScore, geo.score * 0.9) };
   }
   return { label: mpLabel, score: Math.max(0.2, mpScore) };
 }
@@ -127,66 +120,27 @@ function palmSpan(hand: HandDetection): number {
   return Math.max(1e-4, reach(hand.wrist, mid));
 }
 
-function midpoint(a: Vec3, b: Vec3): Vec3 {
-  return {
-    x: (a.x + b.x) * 0.5,
-    y: (a.y + b.y) * 0.5,
-    z: (a.z + b.z) * 0.5,
-  };
-}
-
-function memoryCenter(
-  lastWrist: ReadonlyMap<Handedness, Vec3 | HandTrackHint>,
-): Vec3 | null {
-  if (lastWrist.size === 0) return null;
-  let x = 0;
-  let y = 0;
-  let z = 0;
-  let n = 0;
-  for (const value of lastWrist.values()) {
-    const wrist = hintOf(value).wrist;
-    x += wrist.x;
-    y += wrist.y;
-    z += wrist.z;
-    n += 1;
-  }
-  return { x: x / n, y: y / n, z: z / n };
+/**
+ * Background hands shrink. A lean-in grows the palm — that is still
+ * the barista, and rejecting it is what made recognition die.
+ */
+function smallerCrowdHand(
+  hint: HandTrackHint,
+  detection: HandDetection,
+  distance: number,
+): boolean {
+  if (!hint.palmSpan || hint.palmSpan <= 1e-4 || distance <= 0.1) return false;
+  const next = palmSpan(detection);
+  return (hint.palmSpan - next) / hint.palmSpan > 0.45;
 }
 
 /**
- * How unlike one person's two hands this pair is. Height and palm size do
- * most of the work: two people in the same frame almost never match on both.
+ * A real wrist step, a lean-in, or a reach still match.
+ * Tighter than this dropped the barista mid-gesture.
  */
-function pairCost(a: HandDetection, b: HandDetection): number {
-  const dx = Math.abs(a.wrist.x - b.wrist.x);
-  const dy = Math.abs(a.wrist.y - b.wrist.y);
-  const dz = Math.abs(a.wrist.z - b.wrist.z);
-  const left = palmSpan(a);
-  const right = palmSpan(b);
-  const scale = Math.abs(left - right) / Math.max(left, right);
-  let cost = dy * 2.4 + scale * 1.7 + dz * 0.8;
-  cost += Math.abs(dx - 0.3) * 0.55;
-  if (dx > 0.7) cost += 1.5;
-  if (dy > 0.26) cost += 1.6;
-  if (scale > 0.42) cost += 1.3;
-  if (a.label !== b.label) cost -= 0.16;
-  return cost;
-}
+const LOCK_RADIUS = 0.5;
 
-const ONE_PERSON_COST = 1.55;
-const STAY_WITH_PERSON = 0.4;
-
-function pickPrimary<T extends HandDetection>(
-  hands: readonly T[],
-  center: Vec3 | null,
-): T {
-  if (center) {
-    return hands.reduce((best, hand) =>
-      planeReach(hand.wrist, center) < planeReach(best.wrist, center)
-        ? hand
-        : best,
-    );
-  }
+function pickPrimary<T extends HandDetection>(hands: readonly T[]): T {
   return hands.reduce((best, hand) => {
     const bestSpan = palmSpan(best);
     const nextSpan = palmSpan(hand);
@@ -196,49 +150,60 @@ function pickPrimary<T extends HandDetection>(
   });
 }
 
+function nearestToMemory<T extends HandDetection>(
+  detections: readonly T[],
+  lastWrist: ReadonlyMap<Handedness, Vec3 | HandTrackHint>,
+): T[] {
+  const open = new Map(lastWrist);
+  const taken = new Set<T>();
+  const picked: T[] = [];
+  for (;;) {
+    let bestSide: Handedness | undefined;
+    let bestDetection: T | undefined;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (const [side, memory] of open) {
+      const hint = hintOf(memory);
+      const expected = predicted(hint);
+      const speed = Math.hypot(hint.velocity?.x ?? 0, hint.velocity?.y ?? 0);
+      const radius = LOCK_RADIUS + Math.min(0.16, speed * 1.5);
+      for (const detection of detections) {
+        if (taken.has(detection)) continue;
+        const dist = planeReach(detection.wrist, expected);
+        if (dist > radius) continue;
+        if (smallerCrowdHand(hint, detection, dist)) continue;
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestSide = side;
+          bestDetection = detection;
+        }
+      }
+    }
+    if (!bestSide || !bestDetection) break;
+    open.delete(bestSide);
+    taken.add(bestDetection);
+    picked.push(bestDetection);
+  }
+  return picked;
+}
+
 /**
- * At most two hands, and they have to look like they belong to the same
- * person. Extra detections (a second player, someone in the doorway) are
- * dropped rather than assigned to the empty glove.
+ * One hand. The closest or biggest palm wins; a second detection is
+ * dropped rather than assigned to an empty glove.
+ *
+ * Once a wrist is locked, only something near that memory may keep it.
+ * A stranger across the frame does not inherit the glove.
  */
 export function selectPersonHands<T extends HandDetection>(
   detections: readonly T[],
   lastWrist: ReadonlyMap<Handedness, Vec3 | HandTrackHint> = new Map(),
 ): T[] {
-  if (detections.length <= 1) return detections.slice(0, MAX_TRACKED_HANDS);
-  const center = memoryCenter(lastWrist);
-
-  if (detections.length === 2) {
-    if (pairCost(detections[0], detections[1]) <= ONE_PERSON_COST) {
-      return detections.slice();
-    }
-    return [pickPrimary(detections, center)];
+  if (detections.length === 0) return [];
+  if (lastWrist.size > 0) {
+    const locked = nearestToMemory(detections, lastWrist);
+    return locked.slice(0, MAX_TRACKED_HANDS);
   }
-
-  type Pair = { a: T; b: T; cost: number; mid: Vec3 };
-  const pairs: Pair[] = [];
-  for (let i = 0; i < detections.length; i += 1) {
-    for (let j = i + 1; j < detections.length; j += 1) {
-      const a = detections[i];
-      const b = detections[j];
-      const mid = midpoint(a.wrist, b.wrist);
-      let cost = pairCost(a, b);
-      if (center) cost += planeReach(mid, center) * 1.35;
-      pairs.push({ a, b, cost, mid });
-    }
-  }
-  pairs.sort((left, right) => left.cost - right.cost);
-
-  const near = center
-    ? pairs.filter((pair) => planeReach(pair.mid, center) < STAY_WITH_PERSON)
-    : pairs;
-  const pool = near.length > 0 ? near : pairs;
-  const best = pool[0];
-  if (!best) return detections.slice(0, MAX_TRACKED_HANDS);
-  if (best.cost > ONE_PERSON_COST + 0.85) {
-    return [pickPrimary(detections, center)];
-  }
-  return [best.a, best.b];
+  if (detections.length === 1) return detections.slice();
+  return [pickPrimary(detections)];
 }
 
 function hintOf(value: Vec3 | HandTrackHint): HandTrackHint {
@@ -290,12 +255,13 @@ export function assignHands<T extends HandDetection>(
       const speed = Math.hypot(hint.velocity?.x ?? 0, hint.velocity?.y ?? 0);
       const radius =
         matchRadius +
-        Math.min(0.2, (hint.missed ?? 0) * 0.04) +
+        Math.min(0.18, (hint.missed ?? 0) * 0.04) +
         Math.min(0.16, speed * 1.5);
       for (const detection of detections) {
         if (taken.has(detection)) continue;
         const distance = reach(detection.wrist, expected);
         if (distance > radius) continue;
+        if (smallerCrowdHand(hint, detection, distance)) continue;
         // Position and velocity own identity. The classifier only breaks close
         // ties because its label can flip when fingers overlap or leave frame.
         const labelPenalty =
@@ -338,6 +304,14 @@ export function assignHands<T extends HandDetection>(
           : undefined;
     }
     if (!free) continue;
+    // A leftover may reopen a remembered slot only if it still sits
+    // near that wrist. A far one is a stranger; a near one is the
+    // barista coming back after a blink.
+    const remembered = lastWrist.get(free);
+    if (remembered) {
+      const hint = hintOf(remembered);
+      if (planeReach(detection.wrist, predicted(hint)) > matchRadius) continue;
+    }
     taken.add(detection);
     claimed.set(free, detection);
   }

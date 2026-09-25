@@ -19,13 +19,18 @@ export type PhasePolicy = {
  */
 export function phasePolicy(phase: AppPhase): PhasePolicy {
   switch (phase) {
-    case "sync":
     case "menu":
       return {
-        // These phases own clean 2D teaching/reticle feedback. Showing the
-        // tracked 3D glove underneath created duplicate, malformed-looking
-        // hands without adding interaction information.
+        // The carta owns the 2D reticle. A 3D glove under it is a second
+        // cursor.
         showHands: false,
+        acceptGameplayInput: false,
+        showGameplayGuides: false,
+      };
+    case "sync":
+      return {
+        // One glove on the live palm so left/right is visible, not guessed.
+        showHands: true,
         acceptGameplayInput: false,
         showGameplayGuides: false,
       };
@@ -35,8 +40,15 @@ export function phasePolicy(phase: AppPhase): PhasePolicy {
         acceptGameplayInput: true,
         showGameplayGuides: true,
       };
-    case "brief":
     case "count":
+      return {
+        // Same table and gloves as play. The 3-2-1 sits on the real cafe;
+        // a second iris after "¡YA!" used to open a fake dead scene first.
+        showHands: true,
+        acceptGameplayInput: false,
+        showGameplayGuides: false,
+      };
+    case "brief":
     case "results":
       return {
         showHands: false,

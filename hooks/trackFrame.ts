@@ -13,7 +13,8 @@ import type { Handedness, Vec3 } from "./useHandTracking.ts";
 export const MATCH_RADIUS = 0.58;
 /** Frames a slot must disagree with a confident label before we relabel it. */
 const RELABEL_AFTER = 8;
-const LONE_RELABEL_AFTER = 12;
+/** A lone palm should flip as soon as the detector keeps saying the other side. */
+const LONE_RELABEL_AFTER = 4;
 /** Keep pose, pinch and carry through a blink or a brief occlusion. */
 export const COAST_FOR_MS = 1400;
 /** Remember the slot longer than the visual so re-entry does not swap sides. */
@@ -188,10 +189,20 @@ export function trackFrame(
   const dt = Math.min(0.12, Math.max(1 / 90, detectionDt));
   const memory = new Map<Handedness, HandTrackHint>();
   for (const [handedness, persisted] of persist) {
+    const wrist = persisted.smoothed[0];
+    const knuckle = persisted.smoothed[9];
     memory.set(handedness, {
-      wrist: persisted.smoothed[0],
+      wrist,
       velocity: persisted.velocity,
       missed: persisted.missed,
+      palmSpan:
+        wrist && knuckle
+          ? Math.hypot(
+              wrist.x - knuckle.x,
+              wrist.y - knuckle.y,
+              wrist.z - knuckle.z,
+            )
+          : undefined,
     });
   }
 
@@ -239,7 +250,7 @@ export function trackFrame(
     );
 
     const disagree =
-      detection.label !== handedness && (detection.labelScore ?? 0) > 0.66
+      detection.label !== handedness && (detection.labelScore ?? 0) > 0.45
         ? (prev?.disagree ?? 0) + 1
         : 0;
 

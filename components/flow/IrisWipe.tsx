@@ -28,7 +28,8 @@ export function wait(ms: number) {
 /**
  * Runs an iris-out (the hole pinches in from the edges), swaps the scene,
  * then iris-in (the hole opens from the centre). Every section of the
- * start — sync, menu, briefing, countdown, results — arrives the same way.
+ * start — sync, menu, briefing, results — arrives the same way. The
+ * 3-2-1 sits on the live cafe after one iris; play does not wipe again.
  *
  * IMPORTANT: `busy` clears as soon as the new scene is showing and the iris
  * starts opening. Holding busy through the whole open animation used to lock

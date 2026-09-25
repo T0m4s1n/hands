@@ -1,25 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState, type RefObject } from "react";
-import type { TrackedHand } from "@/hooks/useHandTracking";
+import type { Handedness, TrackedHand } from "@/hooks/useHandTracking";
 import { playSfx } from "@/lib/audio";
 import {
   SYNC_LEAVE_S,
   SYNC_LOCK_S,
-  stepSyncHold,
+  stepSyncSide,
   syncCanLeave,
-  syncSlotFromHand,
+  syncSideFromHand,
+  syncSideLabel,
 } from "./syncHands";
 
-/**
- * How long a hand has to stay in frame before it counts as locked.
- *
- * Tracking flickers on the first second. Lighting a slot the instant a
- * landmark appears would flash ready / not ready and teach the player
- * nothing. A beat of stillness is the difference between "I saw you" and
- * "you are here".
- */
-type Slot = { seen: boolean; locked: boolean };
+type Slot = { side: Handedness | null; seen: boolean; locked: boolean };
 
 export function HandSync({
   handsRef,
@@ -30,11 +23,18 @@ export function HandSync({
   onReady: () => void;
   onPointerFallback: () => void;
 }) {
-  const [left, setLeft] = useState<Slot>({ seen: false, locked: false });
-  const [right, setRight] = useState<Slot>({ seen: false, locked: false });
-  const holdRef = useRef({ Left: 0, Right: 0, ready: 0 });
+  const [slot, setSlot] = useState<Slot>({
+    side: null,
+    seen: false,
+    locked: false,
+  });
+  const holdRef = useRef<{ side: Handedness | null; seconds: number; ready: number }>({
+    side: null,
+    seconds: 0,
+    ready: 0,
+  });
   const doneRef = useRef(false);
-  const heardRef = useRef({ left: false, right: false });
+  const heardRef = useRef(false);
 
   useEffect(() => {
     let last = performance.now();
@@ -43,35 +43,34 @@ export function HandSync({
       const dt = Math.min(0.08, (now - last) / 1000);
       last = now;
       const hands = handsRef.current ?? [];
-      let seenLeft = false;
-      let seenRight = false;
+      let seen: Handedness | null = null;
       for (const hand of hands) {
-        const slot = syncSlotFromHand(hand);
-        if (slot === "Left") seenLeft = true;
-        else if (slot === "Right") seenRight = true;
+        const side = syncSideFromHand(hand);
+        if (side) {
+          seen = side;
+          break;
+        }
       }
       const hold = holdRef.current;
-      hold.Left = stepSyncHold(hold.Left, seenLeft, dt);
-      hold.Right = stepSyncHold(hold.Right, seenRight, dt);
-      const lockedLeft = hold.Left >= SYNC_LOCK_S;
-      const lockedRight = hold.Right >= SYNC_LOCK_S;
-      if (lockedLeft && !heardRef.current.left) playSfx("sync");
-      if (lockedRight && !heardRef.current.right) playSfx("sync");
-      heardRef.current.left = lockedLeft;
-      heardRef.current.right = lockedRight;
-      setLeft((prev) =>
-        prev.seen === seenLeft && prev.locked === lockedLeft
-          ? prev
-          : { seen: seenLeft, locked: lockedLeft },
+      const next = stepSyncSide(
+        { side: hold.side, seconds: hold.seconds },
+        seen,
+        dt,
       );
-      setRight((prev) =>
-        prev.seen === seenRight && prev.locked === lockedRight
+      hold.side = next.side;
+      hold.seconds = next.seconds;
+      const locked = Boolean(next.side) && next.seconds >= SYNC_LOCK_S;
+      if (locked && !heardRef.current) playSfx("sync");
+      heardRef.current = locked;
+      setSlot((prev) =>
+        prev.side === next.side &&
+        prev.seen === Boolean(seen) &&
+        prev.locked === locked
           ? prev
-          : { seen: seenRight, locked: lockedRight },
+          : { side: next.side, seen: Boolean(seen), locked },
       );
-      const locked = Number(lockedLeft) + Number(lockedRight);
-      hold.ready = locked >= 1 ? hold.ready + dt : 0;
-      if (!doneRef.current && syncCanLeave(locked, hold.ready)) {
+      hold.ready = locked ? hold.ready + dt : 0;
+      if (!doneRef.current && syncCanLeave(locked ? 1 : 0, hold.ready)) {
         doneRef.current = true;
         onReady();
       }
@@ -81,13 +80,12 @@ export function HandSync({
     return () => window.cancelAnimationFrame(frame);
   }, [handsRef, onReady]);
 
-  const both = left.locked && right.locked;
-  const one = left.locked || right.locked;
-  const line = both
-    ? "Las dos. Ahí está."
-    : one
-      ? "Una lista. La otra, si puedes."
-      : "Acerca las palmas y quédate un momento.";
+  const name = syncSideLabel(slot.side);
+  const line = slot.locked
+    ? `Mano ${name}. Listo.`
+    : slot.seen
+      ? `Detectando la mano ${name}… quédate así.`
+      : "Levanta una palma y quédate un momento. Veremos si es la izquierda o la derecha.";
 
   return (
     <div className="gate-veil pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center px-6 pb-24 text-center [@media(max-height:700px)]:pb-3 sm:pb-16">
@@ -95,11 +93,10 @@ export function HandSync({
         <span className="text-[clamp(1.6rem,5vw,3.25rem)] font-semibold leading-none tracking-tight text-tint">
           Sincronicemos
         </span>
-        <span className="gate-title mt-1">las manos</span>
+        <span className="gate-title mt-1">la mano</span>
       </h1>
-      <div className="mt-6 flex items-end justify-center gap-10 sm:mt-8 sm:gap-16">
-        <SyncPalm label="Izquierda" side="left" slot={left} />
-        <SyncPalm label="Derecha" side="right" slot={right} />
+      <div className="mt-6 flex items-end justify-center sm:mt-8">
+        <SyncPalm side={slot.side} slot={slot} />
       </div>
       <p className="t-body mt-6 max-w-md text-label-2" role="status" aria-live="polite">
         {line}
@@ -112,28 +109,28 @@ export function HandSync({
         }}
         className="pointer-events-auto mt-5 rounded-full px-4 py-2 text-sm font-bold text-tint underline decoration-tint/45 underline-offset-4 transition-colors hover:text-cream focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-tint"
       >
-        ¿No aparecen? Jugar con ratón
+        ¿No aparece? Jugar con ratón
       </button>
     </div>
   );
 }
 
 function SyncPalm({
-  label,
   side,
   slot,
 }: {
-  label: string;
-  side: "left" | "right";
+  side: Handedness | null;
   slot: Slot;
 }) {
   const mood = slot.locked ? "lock" : slot.seen ? "seen" : "wait";
+  const mirror = side === "Left";
+  const caption = side === "Left" ? "Izquierda" : side === "Right" ? "Derecha" : "Una palma";
   return (
     <div className="flex flex-col items-center gap-3">
       <svg
         viewBox="0 0 160 200"
         className={`sync-hand sync-hand-${mood} h-40 w-32 [@media(max-height:700px)]:h-36 [@media(max-height:700px)]:w-28 sm:h-52 sm:w-40 ${
-          side === "left" ? "-scale-x-100" : ""
+          mirror ? "-scale-x-100" : ""
         }`}
         aria-hidden
       >
@@ -239,7 +236,7 @@ function SyncPalm({
           slot.locked ? "text-tint" : "text-label-3"
         }`}
       >
-        {label}
+        {caption}
       </p>
     </div>
   );

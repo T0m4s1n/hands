@@ -24,6 +24,11 @@ test("only play accepts gameplay input and guides", () => {
   }
 });
 
+test("countdown sits on the live cafe, not a dummy table", () => {
+  assert.equal(phasePolicy("count").showHands, true);
+  assert.equal(phasePolicy("count").acceptGameplayInput, false);
+});
+
 test("each phase has its own music bed and a quieter room than play", () => {
   assert.equal(musicForPhase("menu"), "menu");
   assert.equal(musicForPhase("play"), "play");
@@ -37,10 +42,10 @@ test("each phase has its own music bed and a quieter room than play", () => {
 });
 
 test("hands stay mounted but are visually suppressed behind teaching overlays", () => {
-  assert.equal(phasePolicy("sync").showHands, false);
+  assert.equal(phasePolicy("sync").showHands, true);
   assert.equal(phasePolicy("menu").showHands, false);
   assert.equal(phasePolicy("play").showHands, true);
   assert.equal(phasePolicy("brief").showHands, false);
-  assert.equal(phasePolicy("count").showHands, false);
+  assert.equal(phasePolicy("count").showHands, true);
   assert.equal(phasePolicy("results").showHands, false);
 });

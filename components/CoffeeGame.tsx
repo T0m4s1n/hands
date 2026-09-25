@@ -60,15 +60,21 @@ import {
 import {
   angleDelta,
   crankHandIsLive,
-  driveCrank,
   newStroke,
-  newTurn,
   palmAngle,
   pourFlow,
   updateStroke,
   type StrokeState,
   type TurnState,
 } from "@/components/coffee/gestures";
+import {
+  GRIND_MARK,
+  grindAmount,
+  grindAngle,
+  grindBusyOnStage,
+  grindPose,
+  grindProgress,
+} from "@/components/coffee/grindSpin";
 import {
   writeGloveHold,
   type GloveHold,
@@ -228,6 +234,9 @@ function createGameState(recipe: Recipe, round: number) {
     /** Pestle angle round the mortar, and how far it has been turned. */
     angle: 0,
     turn: null as TurnState | null,
+    grinding: false,
+    grindElapsed: 0,
+    grindFrom: 0,
     /** Back-and-forth counter, for shaking and pressing. */
     stroke: null as StrokeState | null,
     /** Side-to-side wiggles while pouring a heart. */
@@ -589,6 +598,19 @@ export function CoffeeGame({
       playSfx("whoosh");
     };
 
+    const beginGrind = () => {
+      if (game.grinding) return;
+      game.grinding = true;
+      game.grindElapsed = 0;
+      game.grindFrom = game.angle;
+      game.changed = true;
+      if (!game.touched) {
+        game.touched = true;
+        game.elapsed = 0;
+      }
+      playSfx("whoosh");
+    };
+
     const tampGoal = stage.kind === "tamp" ? stage.goal : 3;
     let tampDust = 0;
 
@@ -675,6 +697,26 @@ export function CoffeeGame({
       if (game.tampDwell >= TAMP_DWELL_S) beginTamp();
     }
 
+    // Grind steps here, before any grab lock. Putting it inside
+    // `!grindBusy` froze the pestle the frame after the clip started.
+    if (stage.kind === "crank" && game.grinding) {
+      game.grindElapsed += dt;
+      const progress = grindProgress(game.grindElapsed);
+      game.angle = grindAngle(game.grindFrom, progress, stage.goal);
+      game.amount = grindAmount(progress, stage.goal);
+      game.pos.set(
+        stage.target[0] + Math.cos(game.angle) * CRANK_ARM,
+        stage.target[1] + Math.sin(game.angle) * CRANK_ARM,
+        CRANK_Z,
+      );
+      if (progress >= 1) {
+        game.grinding = false;
+        game.amount = stage.goal;
+        commit(GRIND_MARK);
+        return;
+      }
+    }
+
     if (game.lifecycle === "settling") {
       const settleAt = dripperPark(stage, stage.target);
       game.pos.x = approach(game.pos.x, settleAt[0], 8, dt);
@@ -750,7 +792,12 @@ export function CoffeeGame({
       game.destinationVolume = 0;
       game.angle = 0;
       game.turn = null;
+      game.grinding = false;
+      game.grindElapsed = 0;
+      game.grindFrom = 0;
       game.stroke = null;
+      game.wasGrabbing.Left = false;
+      game.wasGrabbing.Right = false;
       game.flourish = 0;
       game.artStroke = null;
       game.tilt = 0;
@@ -808,6 +855,7 @@ export function CoffeeGame({
       game.amount,
       tampGoal,
     );
+    const grindBusy = grindBusyOnStage(stage.kind, game.grinding);
     if (game.dumping) {
       near = true;
       nearHand = game.holder;
@@ -820,7 +868,13 @@ export function CoffeeGame({
       working = Math.max(working, 0.45 + tampDust * 0.55);
       holderIsLive = true;
     }
-    if (!game.dumping && !tampBusy) {
+    if (grindBusy) {
+      near = true;
+      nearHand = game.holder ?? nearHand;
+      working = 1;
+      holderIsLive = true;
+    }
+    if (!game.dumping && !tampBusy && !grindBusy) {
     for (const handedness of ["Left", "Right"] as const) {
       const hand = hands.find((item) => item.handedness === handedness);
       if (!hand) {
@@ -843,8 +897,8 @@ export function CoffeeGame({
       }
 
       const grabbing = hand.isGrabbing;
-      if (grabbing && !game.wasGrabbing[handedness] && !game.holder) {
-        if (reach < grabAt) {
+      if (grabbing && reach < grabAt) {
+        if (!game.holder) {
           playSfx("grab");
           game.holder = handedness;
           game.changed = true;
@@ -859,16 +913,11 @@ export function CoffeeGame({
           // the player never has to hold it at some particular angle first.
           game.grabAngle = hand.roll ?? palmAngle(hand.smoothedLandmarks);
           game.tilt = 0;
-          if (stage.kind === "crank") {
-            // Keep the pestle where it is. Snapping to the hand's angle is
-            // what teleported the mill when a wrist re-entered the frame.
-            game.turn = newTurn(game.angle);
-            game.turn.turned = game.amount;
-            game.crankLostAt = -1;
-            game.crankOpenAt = -1;
-          }
+          game.crankLostAt = -1;
+          game.crankOpenAt = -1;
           if (stage.kind === "shake") game.stroke = newStroke(hand.cursor.x);
         }
+        if (stage.kind === "crank") beginGrind();
       }
       game.wasGrabbing[handedness] = grabbing;
     }
@@ -937,7 +986,7 @@ export function CoffeeGame({
       game.crankLostAt = -1;
       game.crankOpenAt = -1;
     }
-    const released = release !== "none";
+    let released = release !== "none";
 
     if (
       holder &&
@@ -966,20 +1015,14 @@ export function CoffeeGame({
       game.dumpDwell = 0;
     }
 
-    if (holder && holderIsLive && !released && !game.dumping && !game.tamping) {
-      if (stage.kind === "crank") {
-        if (crankHandIsLive(holder) && holder.isGrabbing) {
-          const angle = Math.atan2(
-            holder.cursor.y - stage.target[1],
-            holder.cursor.x - stage.target[0],
-          );
-          const turn = (game.turn ??= newTurn(game.angle));
-          const moved = driveCrank(turn, angle, dt);
-          working = clamp01(moved / Math.max(dt, 1e-3) / 6);
-          game.angle = turn.angle;
-          game.amount = turn.turned;
-        }
-      } else {
+    if (
+      holder &&
+      holderIsLive &&
+      !released &&
+      !game.dumping &&
+      !game.tamping &&
+      stage.kind !== "crank"
+    ) {
         // Carried objects chase the hand instead of snapping to it, which hides
         // the jitter that is always present in tracking — and heavy ones chase
         // it more slowly, which is most of what makes them feel heavy.
@@ -1093,7 +1136,6 @@ export function CoffeeGame({
             game.tampDwell = 0;
           }
         }
-      }
 
       // Past the brim it goes on the counter. Cutting the stage off the instant
       // it filled hid the mistake; letting it run over shows the player what
@@ -1111,7 +1153,7 @@ export function CoffeeGame({
       }
     }
 
-    if (released && !game.tamping) {
+    if (released && !game.tamping && !game.grinding) {
       const reach = flatDistance(
         game.pos.x,
         game.pos.y,
@@ -1145,6 +1187,7 @@ export function CoffeeGame({
         // it, and can be picked up again. It is never left in mid-air.
         game.lift.velocity = -Math.abs(game.lift.velocity) - 1.2;
       } else if (
+        stage.kind !== "crank" &&
         canCommitRelease(release, stageAmount(stage, game), MIN_EFFORT)
       ) {
         commit(currentQuality(stage, game));
@@ -1156,7 +1199,12 @@ export function CoffeeGame({
 
     // Out of time: the stage is marked as it stands and the brew carries on.
     const limit = game.touched ? STAGE_LIMIT : IDLE_LIMIT;
-    if (!game.dumping && !tampBusy && game.elapsed > limit) {
+    if (
+      !game.dumping &&
+      !tampBusy &&
+      !grindBusyOnStage(stage.kind, game.grinding) &&
+      game.elapsed > limit
+    ) {
       commit(currentQuality(stage, game));
       return;
     }
@@ -1249,9 +1297,11 @@ export function CoffeeGame({
         );
         item.rotation.set(pour.roll * 0.18, pour.roll, pour.twist);
       } else if (stage.kind === "crank") {
-        // The pestle leans into the circle it is being swung round.
+        const spin = grindPose(game.angle, grindBusy ? 1 : working);
         item.rotation.z = game.angle + Math.PI / 2;
-        item.rotation.x = 0.3 + working * 0.14;
+        item.rotation.x = spin.lean;
+        item.rotation.y = spin.roll;
+        item.position.z = game.lift.value + spin.bob;
       } else if (stage.kind === "tilt") {
         // Rolling the wrist either way tips the spout down, so the object
         // always agrees with what the hand is doing.
@@ -1621,7 +1671,7 @@ export function CoffeeGame({
       handedness: game.holder ?? nearHand,
       tool: stage.holds,
       near,
-      holding: held || game.dumping || game.tamping,
+      holding: held || game.dumping || game.tamping || game.grinding,
       gripX: game.pos.x,
       gripY: game.pos.y,
       gripZ:

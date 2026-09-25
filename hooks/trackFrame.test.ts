@@ -40,10 +40,12 @@ function detection(
   x: number,
   label: "Left" | "Right",
   score = 0.9,
+  y = 0.6,
 ): TrackedDetection {
   const raw = OPEN_HAND.map((point) => ({
     ...point,
     x: point.x + (x - 0.3),
+    y: point.y + (y - 0.6),
   }));
   return { raw, wrist: raw[0], label, labelScore: score };
 }
@@ -60,25 +62,39 @@ test("smoothLandmarks settles in the same wall-clock time at any tick rate", () 
   assert.ok(Math.abs(a[0].x - b[0].x) < 0.002);
 });
 
-test("a flipped MediaPipe label does not swap established slots", () => {
+test("a flipped MediaPipe label does not steal the play hand", () => {
   const persist = new Map<"Left" | "Right", PersistedHand>();
-  trackFrame(
-    persist,
-    [detection(0.3, "Left"), detection(0.7, "Right")],
-    1 / 24,
-    THRESHOLDS,
-  );
+  trackFrame(persist, [detection(0.3, "Left")], 1 / 24, THRESHOLDS);
   const next = trackFrame(
     persist,
-    [detection(0.31, "Right", 0.95), detection(0.69, "Left", 0.95)],
+    [detection(0.31, "Right", 0.95)],
     1 / 24,
     THRESHOLDS,
   );
-  const left = next.find((hand) => hand.handedness === "Left");
-  const right = next.find((hand) => hand.handedness === "Right");
-  assert.ok(left && right);
-  assert.ok(left.smoothedLandmarks[0].x < 0.4);
-  assert.ok(right.smoothedLandmarks[0].x > 0.6);
+  assert.equal(next.length, 1);
+  assert.equal(next[0].handedness, "Left");
+  assert.ok(next[0].smoothedLandmarks[0].x < 0.4);
+});
+
+test("a lone right hand is not kept as left", () => {
+  const persist = new Map<"Left" | "Right", PersistedHand>();
+  trackFrame(persist, [detection(0.28, "Left", 0.4)], 1 / 24, THRESHOLDS);
+  let next = trackFrame(
+    persist,
+    [detection(0.29, "Right", 0.9)],
+    1 / 24,
+    THRESHOLDS,
+  );
+  for (let i = 0; i < 5; i += 1) {
+    next = trackFrame(
+      persist,
+      [detection(0.29, "Right", 0.9)],
+      1 / 24,
+      THRESHOLDS,
+    );
+  }
+  assert.equal(next.length, 1);
+  assert.equal(next[0].handedness, "Right");
 });
 
 test("coasting keeps a hand live long enough to finish a blink", () => {
@@ -117,7 +133,38 @@ test("MATCH_RADIUS stays wide enough for a natural wrist step", () => {
   assert.ok(MATCH_RADIUS >= 0.25);
 });
 
-test("never publishes more than two hands, even when four are detected", () => {
+test("a crowd around the barista does not steal the play hand", () => {
+  const persist = new Map<"Left" | "Right", PersistedHand>();
+  trackFrame(persist, [detection(0.3, "Left")], 1 / 24, THRESHOLDS);
+  const next = trackFrame(
+    persist,
+    [
+      detection(0.31, "Left"),
+      detection(0.16, "Left"),
+      detection(0.44, "Right"),
+    ],
+    1 / 24,
+    THRESHOLDS,
+  );
+  assert.equal(next.length, 1);
+  assert.ok(next[0].smoothedLandmarks[0].x < 0.4);
+});
+
+test("when the player leaves, a far palm does not inherit the glove", () => {
+  const persist = new Map<"Left" | "Right", PersistedHand>();
+  trackFrame(persist, [detection(0.3, "Left")], 1 / 24, THRESHOLDS);
+  const next = trackFrame(
+    persist,
+    [detection(0.92, "Left", 0.9, 0.08)],
+    1 / 24,
+    THRESHOLDS,
+  );
+  assert.equal(next.length, 1);
+  assert.equal(next[0].tracking, "coasting");
+  assert.ok(Math.abs(next[0].smoothedLandmarks[0].x - 0.3) < 0.06);
+});
+
+test("never publishes more than one hand, even when four are detected", () => {
   const persist = new Map<"Left" | "Right", PersistedHand>();
   const next = trackFrame(
     persist,
@@ -130,7 +177,7 @@ test("never publishes more than two hands, even when four are detected", () => {
     1 / 24,
     THRESHOLDS,
   );
-  assert.ok(next.length <= 2);
+  assert.ok(next.length <= 1);
 });
 
 test("published wrist follows the live camera, not the lagged shape", () => {

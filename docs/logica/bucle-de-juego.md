@@ -107,7 +107,7 @@ etapa en vez de heredar "a stale carry height from the last stage", que
 | Tipo | Cómo se conduce | Cómo se puntúa |
 | --- | --- | --- |
 | `place` | Nada por fotograma | `placeScore(reach, radius)` al soltar o al agotarse el tiempo |
-| `crank` | `driveCrank` hacia `atan2(cursor − target)`; un salto persigue a tope, no para el mango | `bandScore` |
+| `crank` | el primer giro arranca `startGrindClip`; el clip gira solo hasta el objetivo | `GRIND_MARK` |
 | `hold` | Dentro del anillo, `amount += rate * dt` | `bandScore` sobre nivel 0..1 |
 | `tamp` | Clip `tampPose` (alza, slam, giro). El tracker sólo dispara; el clip termina solo | `bandScore` |
 | `shake` | `updateStroke(stroke, cursor.x, SHAKE_THROW)`; cuenta cada cambio de sentido | `bandScore` |

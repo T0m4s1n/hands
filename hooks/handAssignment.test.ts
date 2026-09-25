@@ -35,13 +35,24 @@ assert.equal(landmarkChirality(handCloud("Right"))?.label, "Right");
 assert.equal(landmarkChirality(handCloud("Left"))?.label, "Left");
 assert.equal(fuseHandedness("Left", 0.4, handCloud("Right")).label, "Right");
 assert.equal(fuseHandedness("Left", 0.92, handCloud("Right")).label, "Left");
+{
+  const rightOnTheLeft = handCloud("Right").map((point) => ({
+    ...point,
+    x: point.x - 0.28,
+  }));
+  assert.equal(
+    fuseHandedness("Right", 0.55, rightOnTheLeft).label,
+    "Right",
+    "a right hand on the left of the selfie is still Right",
+  );
+}
 console.log("ok  skeleton chirality knows left from right");
 
-assert.equal(MAX_TRACKED_HANDS, 2);
+assert.equal(MAX_TRACKED_HANDS, 1);
 
 {
   const pair = selectPersonHands([at(0.3, "Left"), at(0.58, "Right")]);
-  assert.equal(pair.length, 2, "one person's two hands stay");
+  assert.equal(pair.length, 1, "only one palm is published");
 }
 
 {
@@ -49,7 +60,7 @@ assert.equal(MAX_TRACKED_HANDS, 2);
     { wrist: { x: 0.16, y: 0.22, z: 0 }, label: "Left" },
     { wrist: { x: 0.84, y: 0.78, z: 0 }, label: "Right" },
   ]);
-  assert.equal(mixed.length, 1, "two strangers each showing one hand become one");
+  assert.equal(mixed.length, 1, "two strangers become one play hand");
 }
 
 {
@@ -59,12 +70,7 @@ assert.equal(MAX_TRACKED_HANDS, 2);
     { wrist: { x: 0.24, y: 0.18, z: 0 }, label: "Left" },
     { wrist: { x: 0.48, y: 0.2, z: 0 }, label: "Right" },
   ]);
-  assert.equal(four.length, 2);
-  const ys = four.map((hand) => hand.wrist.y);
-  assert.ok(
-    ys.every((y) => y > 0.5) || ys.every((y) => y < 0.35),
-    "the pair is one person, not one hand from each",
-  );
+  assert.equal(four.length, 1, "four detections still become one glove");
 }
 
 {
@@ -77,13 +83,33 @@ assert.equal(MAX_TRACKED_HANDS, 2);
     ],
     last(0.3, 0.5),
   );
-  assert.equal(locked.length, 2);
-  assert.ok(
-    locked.every((hand) => hand.wrist.y > 0.5),
-    "the already-tracked person keeps the gloves",
+  assert.equal(locked.length, 1);
+  assert.ok(locked[0].wrist.y > 0.5, "the already-tracked palm keeps the glove");
+}
+{
+  const crowd = selectPersonHands(
+    [
+      { wrist: { x: 0.92, y: 0.08, z: 0 }, label: "Left" },
+      { wrist: { x: 0.98, y: 0.1, z: 0 }, label: "Right" },
+    ],
+    last(0.28, 0.52),
+  );
+  assert.equal(
+    crowd.length,
+    0,
+    "a far couple does not inherit the locked glove",
   );
 }
-console.log("ok  only one person, at most two hands");
+{
+  const moved = selectPersonHands([at(0.44, "Left")], last(0.3));
+  assert.equal(moved.length, 1, "a player who moved is still playing");
+}
+{
+  const lone = selectPersonHands([at(0.48, "Right")], last(0.3));
+  assert.equal(lone.length, 1, "one moving hand is still that hand");
+  assert.ok(Math.abs(lone[0].wrist.x - 0.48) < 1e-9);
+}
+console.log("ok  only one play hand");
 
 assert.equal(anatomicalHandedness("Left", true), "Left");
 assert.equal(anatomicalHandedness("Left", false), "Right");
@@ -148,6 +174,12 @@ console.log("ok  handedness follows the explicit mirror contract");
   assert.equal(out.get("Right")!.wrist.x, 0.9);
   assert.equal(out.has("Left"), false, "the far hand is not claimed as Left");
   console.log("ok  a far jump is not matched by continuity");
+}
+
+{
+  const out = assignHands([at(0.92, "Left")], last(0.3, 0.7), R);
+  assert.equal(out.size, 0, "a leftover does not teleport a remembered slot");
+  console.log("ok  leftovers do not steal an existing identity");
 }
 
 // 6. One hand tracked, one detection nearby: it stays that hand even when the

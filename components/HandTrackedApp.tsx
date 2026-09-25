@@ -262,16 +262,16 @@ export function HandTrackedApp() {
   );
 
   const toCount = useCallback(() => {
-    void go(() => setPhase("count"));
-  }, [go]);
-
-  const toPlay = useCallback(() => {
     void go(() => {
       setStage(null);
       setRound((value) => value + 1);
-      setPhase("play");
+      setPhase("count");
     });
   }, [go]);
+
+  const toPlay = useCallback(() => {
+    setPhase("play");
+  }, []);
 
   const toResults = useCallback(() => {
     void go(() => setPhase("results"));

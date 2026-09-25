@@ -9,8 +9,8 @@ import {
 } from "./countdownSchedule";
 
 /**
- * Nintendo 3-2-1: one huge number, no chrome. Starts the game after the last
- * beat leaves — not under the 1.
+ * Nintendo 3-2-1 over the live cafe. After the last beat the game starts
+ * on this same table — no second iris, no dummy scene.
  */
 export function Countdown({ onDone }: { onDone: () => void }) {
   const [beat, setBeat] = useState(0);
@@ -36,8 +36,8 @@ export function Countdown({ onDone }: { onDone: () => void }) {
   if (!glyph) return null;
 
   return (
-    <div className="absolute inset-0 z-20 flex items-center justify-center">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_20%,rgb(20_3_8/0.55)_100%)]" />
+    <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_42%,rgb(20_3_8/0.28)_100%)]" />
       <p
         key={glyph}
         className={`count-pop text-hero relative font-semibold leading-[0.85] tracking-[-0.06em] text-cream tabular-nums ${

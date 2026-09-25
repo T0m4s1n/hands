@@ -15,7 +15,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Café a mano",
   description:
-    "Prepara café con las manos. El seguimiento corre en tu navegador: pellizca para tomar, abre la mano para soltar.",
+    "Prepara café con una mano. El seguimiento corre en tu navegador: pellizca para tomar, abre la palma para soltar.",
 };
 
 export const viewport: Viewport = {
