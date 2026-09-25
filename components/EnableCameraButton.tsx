@@ -114,8 +114,8 @@ export function EnableCameraButton({
         Continuar con el ratón
       </Button>
       <p className="t-caption text-label-3">
-        Con ratón: mantén pulsado para tomar y usa la rueda para inclinar y
-        verter.
+        Con ratón: clic izquierdo para tomar, clic derecho a los lados
+        para inclinar y verter.
       </p>
       {error && (
         <p className="t-subhead rounded-tile bg-fill p-3 text-left text-label-2">

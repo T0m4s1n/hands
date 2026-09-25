@@ -35,6 +35,7 @@ import {
 } from "@/components/coffee/liquid";
 import {
   canCommitRelease,
+  carryShouldHold,
   crankShouldHold,
   releaseReason,
 } from "@/components/coffee/interactionState";
@@ -923,6 +924,15 @@ export function CoffeeGame({
         release = "none";
         holderIsLive = true;
       }
+    } else if (game.holder) {
+      game.crankOpenAt = -1;
+      if (holder) game.crankLostAt = -1;
+      else if (game.crankLostAt < 0) game.crankLostAt = time;
+      const lostS = game.crankLostAt < 0 ? 0 : time - game.crankLostAt;
+      if (carryShouldHold(Boolean(holder), lostS)) {
+        release = "none";
+        holderIsLive = true;
+      }
     } else {
       game.crankLostAt = -1;
       game.crankOpenAt = -1;
@@ -1046,10 +1056,11 @@ export function CoffeeGame({
             working = result.moved + result.spilled > 0 ? 1 : 0;
           }
         } else if (stage.kind === "tilt") {
-          game.tilt = angleDelta(
+          const wanted = angleDelta(
             game.grabAngle,
             holder.roll ?? palmAngle(holder.smoothedLandmarks),
           );
+          game.tilt = approach(game.tilt, wanted, 12, dt);
           const flow = pourFlow(game.tilt);
           if (inside) {
             const result = pour({
@@ -1598,7 +1609,7 @@ export function CoffeeGame({
         detail: readout(stage, game),
         quality,
         holding: held,
-        near: game.near,
+        near: held ? onMark : game.near,
         marks: game.published,
         hurry: game.elapsed > limit - HURRY_AT,
         working: working > 0.05,

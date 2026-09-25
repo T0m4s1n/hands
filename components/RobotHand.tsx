@@ -222,9 +222,9 @@ export function RobotHand({
       const posRate = live
         ? gloveChaseRate(
             Math.max(0, travel - (locked ? 0 : GLOVE_POS_DEAD)),
-            locked ? 36 : 14,
-            locked ? 96 : 70,
-            0.18,
+            locked ? 28 : 12,
+            locked ? 72 : 42,
+            0.22,
           )
         : 10;
       const rotRate = live

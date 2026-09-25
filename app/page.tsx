@@ -313,6 +313,18 @@ export default function Portada() {
                   </li>
                 ))}
               </ul>
+
+              <p className="t-footnote mt-8 max-w-md text-label-3">
+                Un proyecto de la{" "}
+                <span className="font-semibold text-label-2">
+                  Gobernación de Nariño
+                </span>
+                . Creado por{" "}
+                <span className="font-semibold text-label-2">
+                  Tomás Benavides
+                </span>
+                .
+              </p>
             </div>
 
             <div className="relative mx-auto w-full max-w-md sm:max-w-lg lg:max-w-none lg:w-[min(50vw,42rem)] lg:justify-self-end">
@@ -525,7 +537,11 @@ export default function Portada() {
       {/* -------------------------------------------- footer, on the deep */}
       <Field tone="deep" curve="hill" className="pb-10 pt-8">
         <div className="relative mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-4 px-6 sm:px-8">
-          <p className="t-caption max-w-lg text-label-3">
+          <div className="max-w-lg space-y-2">
+            <p className="t-caption text-label-2">
+              De la Gobernación de Nariño. Creado por Tomás Benavides.
+            </p>
+            <p className="t-caption text-label-3">
             Modelos y sonidos de{" "}
             <a
               href="https://kenney.nl"
@@ -572,8 +588,9 @@ export default function Portada() {
             >
               Nick Kimel
             </a>{" "}
-            y Unsplash.
-          </p>
+              y Unsplash.
+            </p>
+          </div>
           <nav className="flex flex-wrap gap-1">
             {[
               { href: "/jugar", label: "Jugar" },

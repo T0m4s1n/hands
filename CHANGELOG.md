@@ -11,6 +11,24 @@ sirve de nada dentro de seis meses.
 
 ## Sin publicar
 
+### Créditos en la portada
+
+- La primera página dice que es de la **Gobernación de Nariño** y
+  que lo creó **Tomás Benavides**.
+
+### El juego con las manos se entiende y no tiembla
+
+- El HUD **dice el siguiente paso**. En la mano y lejos: «llévalo»;
+  encima: el gesto. Antes decía «suelta» en cuanto pellizcabas.
+- El tracker y lo que cargas **siguen con menos temblor**. Un
+  parpadeo no tira la taza. El vertido no copia el ruido de la muñeca.
+
+### El ratón inclina con el clic derecho
+
+- Con ratón, **mantener el clic derecho y mover a los lados** gira
+  la muñeca en X, como piden los vertidos. Antes solo la rueda
+  inclinaba, y pulsar el derecho soltaba la jarra (`buttons === 1`).
+
 ### La carta se lee sobre la taza
 
 - El tipo **ya no se pierde en el hueco**. El foto se corre a la

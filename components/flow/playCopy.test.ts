@@ -8,6 +8,19 @@ import {
   stageSummary,
 } from "./playCopy.ts";
 
+test("a held tool far from the mark says to take it there", () => {
+  const line = stagePrompt({
+    kind: "place",
+    sits: "grinder",
+    near: false,
+    holding: true,
+    working: false,
+    pointer: false,
+  });
+  assert.match(line, /llévalo/i);
+  assert.match(line, /molino/);
+});
+
 test("a held place stage never still says pinch", () => {
   const line = stagePrompt({
     kind: "place",
@@ -32,7 +45,7 @@ test("pointer prompts keep the mouse verb while naming the same destination", ()
   });
   assert.match(line, /clic/);
   assert.match(line, /taza/);
-  assert.match(line, /rueda/);
+  assert.match(line, /clic derecho/);
 });
 
 test("every recipe stage has a matching verb and destination", () => {

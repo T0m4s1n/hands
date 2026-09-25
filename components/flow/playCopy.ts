@@ -67,6 +67,12 @@ export function stagePrompt({
     return "Toma el utensilio que brilla";
   }
 
+  if (!near && kind !== "crank" && kind !== "shake") {
+    return pointer
+      ? `Mantén clic y llévalo sobre ${dest}`
+      : `Llévalo sobre ${dest}`;
+  }
+
   if (working) {
     if (kind === "crank") return "Sigue girando alrededor del molino";
     if (kind === "shake") return "Sigue agitando de lado a lado";
@@ -94,11 +100,11 @@ export function stagePrompt({
     case "tilt":
       if (sits === "mug") {
         return pointer
-          ? "Mantén clic sobre la taza, usa la rueda y zigzaguea un corazón"
+          ? "Mantén clic sobre la taza, clic derecho a los lados para inclinar y zigzaguea un corazón"
           : "Inclina sobre la taza, zigzaguea como un barista y cierra con un corazón";
       }
       return pointer
-        ? `Mantén clic sobre ${dest} y usa la rueda para inclinar`
+        ? `Mantén clic sobre ${dest} y clic derecho a los lados para inclinar`
         : `Inclina la muñeca sobre ${dest}`;
     case "hold":
       return pointer

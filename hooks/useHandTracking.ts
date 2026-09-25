@@ -21,6 +21,12 @@ import {
   extrapolateCursor,
   landmarkVelocityToWorld,
 } from "./handMotion";
+import {
+  pointerIsGrabbing,
+  pointerIsRolling,
+  rollFromDrag,
+  rollFromWheel,
+} from "./pointerHand";
 
 export { applyGrabLatch, type GrabThresholds };
 
@@ -524,15 +530,14 @@ export function useHandTracking() {
     setError(null);
     setStatus("ready");
 
-    // A mouse has no wrist, so the roll a pour needs has to come from
-    // somewhere else: the wheel. Without it the fallback could not tip a jug,
-    // which left two of the three recipes impossible to finish without a
-    // camera.
+    // A mouse has no wrist. Left click grabs. Right-drag (and the wheel)
+    // rolls it. Grab used to be `buttons === 1`, so holding the right
+    // button to tip dropped the jug.
     let roll = 0;
     let last: PointerEvent | null = null;
 
     const publish = (event: PointerEvent) => {
-      const grabbing = event.buttons === 1;
+      const grabbing = pointerIsGrabbing(event.buttons);
       handsRef.current = [
         {
           handedness: "Right",
@@ -564,6 +569,13 @@ export function useHandTracking() {
     };
 
     const sync = (event: PointerEvent) => {
+      if (
+        event.type === "pointermove" &&
+        pointerIsRolling(event.buttons) &&
+        last
+      ) {
+        roll = rollFromDrag(roll, event.clientX - last.clientX);
+      }
       last = event;
       publish(event);
     };
@@ -571,9 +583,12 @@ export function useHandTracking() {
     const wheel = (event: WheelEvent) => {
       if (!last) return;
       event.preventDefault();
-      // A couple of notches is a full tip, which is about how far a wrist goes.
-      roll = Math.max(-1.6, Math.min(1.6, roll + event.deltaY * 0.004));
+      roll = rollFromWheel(roll, event.deltaY);
       publish(last);
+    };
+
+    const noMenu = (event: Event) => {
+      event.preventDefault();
     };
 
     // A hand already, at the centre, so the sync screen can lock without
@@ -589,11 +604,13 @@ export function useHandTracking() {
     window.addEventListener("pointerdown", sync);
     window.addEventListener("pointerup", sync);
     window.addEventListener("wheel", wheel, { passive: false });
+    window.addEventListener("contextmenu", noMenu);
     pointerCleanupRef.current = () => {
       window.removeEventListener("pointermove", sync);
       window.removeEventListener("pointerdown", sync);
       window.removeEventListener("pointerup", sync);
       window.removeEventListener("wheel", wheel);
+      window.removeEventListener("contextmenu", noMenu);
     };
   }, [stop]);
 

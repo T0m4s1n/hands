@@ -19,9 +19,9 @@ export const COAST_FOR_MS = 1400;
 /** Remember the slot longer than the visual so re-entry does not swap sides. */
 export const IDENTITY_MEMORY_MS = 2400;
 
-const STILL_RATE = 7;
-const MOVING_RATE = 72;
-const MOVING_SPAN = 0.06;
+const STILL_RATE = 9;
+const MOVING_RATE = 36;
+const MOVING_SPAN = 0.1;
 
 export type TrackedDetection = {
   raw: Vec3[];

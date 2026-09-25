@@ -26,6 +26,17 @@ test("cue leads the player from finding to grabbing to acting", () => {
   assert.match(
     stageCue({
       kind: "place",
+      sits: "grinder",
+      near: false,
+      holding: true,
+      working: false,
+      pointer: false,
+    }),
+    /llévalo/i,
+  );
+  assert.match(
+    stageCue({
+      kind: "place",
       near: true,
       holding: true,
       working: false,

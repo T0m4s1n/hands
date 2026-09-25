@@ -19,6 +19,6 @@ test("every gameplay gesture has mouse-specific guidance", () => {
   }
 });
 
-test("pour guidance explains the otherwise hidden wheel control", () => {
-  assert.match(pointerStagePrompt("tilt"), /rueda/i);
+test("pour guidance explains how the mouse tips the wrist", () => {
+  assert.match(pointerStagePrompt("tilt"), /clic derecho/i);
 });

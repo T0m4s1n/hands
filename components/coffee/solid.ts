@@ -162,7 +162,7 @@ export function overlap(
  * is most of what makes them feel heavy — a full kettle that snapped to the
  * hand like a teaspoon was the single biggest reason nothing had any weight.
  */
-export function carryRate(mass: number, base = 18): number {
+export function carryRate(mass: number, base = 13): number {
   return base / Math.max(1, mass);
 }
 

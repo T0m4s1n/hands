@@ -4,6 +4,8 @@ import {
   CRANK_LOST_S,
   CRANK_OPEN_S,
   canCommitRelease,
+  CARRY_LOST_S,
+  carryShouldHold,
   crankShouldHold,
   holderIsDriving,
   releaseReason,
@@ -41,6 +43,12 @@ test("a crank hold survives a blink and a side-on open", () => {
 test("an open hand that left the mill lets go", () => {
   assert.equal(crankShouldHold(true, false, 0, 0, true), false);
   assert.equal(crankShouldHold(true, true, 0, 0, true), true);
+});
+
+test("a blink mid-carry keeps the cup, an open hand does not", () => {
+  assert.equal(carryShouldHold(false, CARRY_LOST_S * 0.5), true);
+  assert.equal(carryShouldHold(false, CARRY_LOST_S), false);
+  assert.equal(carryShouldHold(true, 0), false);
 });
 
 test("a coasting holder is still driving the object", () => {

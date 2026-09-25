@@ -24,6 +24,8 @@ export function releaseReason(
   return holderIsGrabbing ? "none" : "opened";
 }
 
+/** A blink mid-carry must not drop the cup. */
+export const CARRY_LOST_S = 0.4;
 /** A blink mid-circle must not drop the pestle. */
 export const CRANK_LOST_S = 0.65;
 /**
@@ -49,6 +51,14 @@ export function crankShouldHold(
   if (holderPresent && openS < CRANK_OPEN_S) return true;
   if (!holderPresent && lostS < CRANK_LOST_S) return true;
   return false;
+}
+
+/** Keep a carried cup through a blink. Opening the hand still lets go. */
+export function carryShouldHold(
+  holderPresent: boolean,
+  lostS: number,
+): boolean {
+  return !holderPresent && lostS < CARRY_LOST_S;
 }
 
 export function canCommitRelease(
